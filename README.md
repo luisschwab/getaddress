@@ -5,6 +5,8 @@ Builds a list of reachable Bitcoin nodes by impersonating one and sending `getad
 
 Supports all networks: `mainnet`, `testnet4`, `signet`, `regtest`.
 
+Takes a while: a handshake must be made to a potential peer in order for it to be considered valid.
+
 Usage
 ---
 
@@ -98,3 +100,12 @@ network_IP Structure
 | Port         | big-endian      | 2    | Port                                         |
 └──────────────┴─────────────────┴──────┴──────────────────────────────────────────────┘
 ```
+
+TODO
+---
+- [ ] Use GeoLite2-ASN.mmdb to determine AS's stakes in node hosting
+- [ ] Add `addrv2` support
+- [ ] Add Tor support
+- [ ] Add I2P support
+- [ ] Add CJDNS supoort
+- [ ] Add Yggdrasil support

@@ -2,6 +2,8 @@
 //! Builds a list of reachable Bitcoin nodes by impersonating one
 //! and sending `getaddr` messages to known nodes.
 
+#![allow(clippy::redundant_field_names)]
+
 use clap::builder::PossibleValuesParser;
 use clap::command;
 use clap::Parser;
@@ -14,7 +16,9 @@ use log::error;
 use log::info;
 use log::warn;
 use log::Record;
+
 use rand::Rng;
+use rayon::ThreadPoolBuilder;
 use sha2::Digest;
 use sha2::Sha256;
 use std::fmt::Arguments;
@@ -33,14 +37,16 @@ use std::path::PathBuf;
 use std::str;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use std::time::Instant;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 
 static RUNNING: AtomicBool = AtomicBool::new(true);
 
+const REQUEST_TIMEOUT: u64 = 2;
 const OUTPUT_DIR: &str = "output";
-const REQUEST_TIMEOUT: u64 = 3;
 
 const PROTOCOL_VERSION: u32 = 70013;
 
@@ -117,6 +123,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         None => (MAGIC_MAINNET, PORT_MAINNET, SEEDS_MAINNET, "mainnet-nodes.txt"),
     };
 
+    let t_0 = Instant::now();
+    let n_threads = std::cmp::max(1, num_cpus::get() - 2);
+
     // Pick a random seed node from DNS seeder's record
     let dns_seeder = dns_seeds[rng.gen_range(0..dns_seeds.len())];
     let seeds = lookup_host(dns_seeder).unwrap();
@@ -135,14 +144,70 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         RUNNING.store(false, Ordering::SeqCst);
     })?;
 
-    while RUNNING.load(Ordering::SeqCst) {
-        let peer = &peers[rng.gen_range(0..peers.len())];
-        get_address(peer.ip, peer.port, network_magic, &mut peers);
-    }
+    // run get_address on `$(( $nproc) - 2 ))` threads
+    let peers = Arc::new(Mutex::new(peers));
+    let pool = ThreadPoolBuilder::new()
+        .num_threads(n_threads)
+        .build()
+        .unwrap();
+
+    pool.scope(|s| {
+        while RUNNING.load(Ordering::SeqCst) {
+            let peers_clone = Arc::clone(&peers);
+
+            s.spawn(move |_| {
+                let mut rng = rand::thread_rng();
+
+                while RUNNING.load(Ordering::SeqCst) {
+                    let peer = {
+                        let peers_guard = peers_clone.lock().unwrap();
+                        if peers_guard.is_empty() {
+                            break; // If no peers, exit the loop
+                        }
+                        let peer = &peers_guard[rng.gen_range(0..peers_guard.len())];
+                        (peer.ip, peer.port)
+                    };
+
+                    get_address(peer.0, peer.1, network_magic, peers_clone.clone());
+                }
+            });
+
+            std::thread::sleep(Duration::from_millis(100));
+        }
+    });
+
+    let mut peers = match Arc::try_unwrap(peers) {
+        Ok(mutex) => match mutex.into_inner() {
+            Ok(peers) => peers,
+            Err(e) => {
+                error!("failed to unwrap peers mutex: {}", e);
+                std::process::exit(-1);
+            }
+        },
+        Err(e) => {
+            error!(
+                "failed to unwrap Arc: arc still has {} strong references",
+                Arc::strong_count(&e)
+            );
+            std::process::exit(-1);
+        }
+    };
 
     peers.sort();
     peers.dedup();
-    info!("found {} peers", peers.len());
+
+    let delta = t_0.elapsed().as_secs();
+    let hour = delta / 3600;
+    let minute = (delta % 3600) / 60;
+    let second = delta % 60;
+
+    info!(
+        "found {} peers in {:02}h{:02}m{:02}s",
+        peers.len(),
+        hour,
+        minute,
+        second
+    );
 
     let path = Path::new(OUTPUT_DIR).join(filename);
     match dump_to_file(&path, &peers) {
@@ -157,8 +222,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 /// Perform a handshake, return success status
 fn handshake(stream: &mut TcpStream, network_magic: &[u8]) -> Result<bool, Error> {
-    let peer_ip = stream.peer_addr().unwrap().ip();
-    let peer_port = stream.peer_addr().unwrap().port();
+    let (peer_ip, peer_port) = match stream.peer_addr() {
+        Ok(addr) => (addr.ip(), addr.port()),
+        Err(e) => return Err(e),
+    };
 
     info!("starting handshake with {}:{}", peer_ip, peer_port);
 
@@ -201,7 +268,12 @@ fn handshake(stream: &mut TcpStream, network_magic: &[u8]) -> Result<bool, Error
     Ok(true)
 }
 
-fn get_address(peer_ip: IpAddr, peer_port: u16, network_magic: &[u8], peers: &mut Vec<Peer>) {
+fn get_address(
+    peer_ip: IpAddr,
+    peer_port: u16,
+    network_magic: &[u8],
+    peers: Arc<Mutex<Vec<Peer>>>,
+) {
     let socket_addr = SocketAddr::new(peer_ip, peer_port);
     match TcpStream::connect_timeout(&socket_addr, Duration::from_secs(REQUEST_TIMEOUT)) {
         Err(e) => warn!(
@@ -245,7 +317,42 @@ fn get_address(peer_ip: IpAddr, peer_port: u16, network_magic: &[u8], peers: &mu
                                         parse_addr_response(&mut payload, peer_ip, peer_port);
 
                                     debug!("added {} peers to db", new_peers.len());
-                                    peers.extend(new_peers);
+
+                                    // only add new peers if they are responsive (make a successful handshake)
+                                    for peer in new_peers {
+                                        // catch SIGINT
+                                        if !RUNNING.load(Ordering::Relaxed) {
+                                            return;
+                                        }
+
+                                        let socket_addr = SocketAddr::new(peer.ip, peer.port);
+                                        match TcpStream::connect_timeout(
+                                            &socket_addr,
+                                            Duration::from_secs(REQUEST_TIMEOUT),
+                                        ) {
+                                            Ok(mut stream) => {
+                                                if let Ok(true) =
+                                                    handshake(&mut stream, network_magic)
+                                                {
+                                                    match peer.ip {
+                                                        IpAddr::V4(ip) => info!(
+                                                            "new peer discovered @ {}:{}",
+                                                            ip, peer.port
+                                                        ),
+                                                        IpAddr::V6(ip) => info!(
+                                                            "new peer discovered @ [{}]:{}",
+                                                            ip, peer.port
+                                                        ),
+                                                    }
+
+                                                    if let Ok(mut peers_guard) = peers.lock() {
+                                                        peers_guard.push(peer);
+                                                    }
+                                                }
+                                            }
+                                            _ => continue,
+                                        }
+                                    }
                                 }
                             }
                             Err(e) => {
@@ -330,7 +437,7 @@ fn make_packet(command: &str, payload: Option<Vec<u8>>, network_magic: &[u8]) ->
 /// Reads a message from the stream, return the command and payload
 fn read_message(stream: &mut TcpStream) -> Result<(String, Vec<u8>), Error> {
     let mut header = vec![0u8; 24];
-    let _ = stream.read_exact(&mut header)?;
+    stream.read_exact(&mut header)?;
 
     let command = parse_header(&header);
 
@@ -396,11 +503,6 @@ fn parse_addr_response(payload: &mut Vec<u8>, peer_ip: IpAddr, peer_port: u16) -
             port: port,
         };
 
-        match peer.ip {
-            IpAddr::V4(ip) => info!("new peer discovered @ {}:{}", ip, peer.port),
-            IpAddr::V6(ip) => info!("new peer discovered @ [{}]:{}", ip, peer.port),
-        }
-
         new_peers.push(peer);
     }
 
@@ -412,7 +514,12 @@ fn dump_to_file(path: &PathBuf, peers: &Vec<Peer>) -> Result<(), Error> {
     fs::create_dir_all(OUTPUT_DIR)?;
 
     if path.exists() {
-        fs::remove_file(&path)?;
+        match fs::remove_file(path) {
+            Ok(_) => {}
+            Err(e) => {
+                error!("error while deleting {:?}: {}", path, e);
+            }
+        };
     }
 
     let mut file = File::create(path)?;
@@ -424,7 +531,7 @@ fn dump_to_file(path: &PathBuf, peers: &Vec<Peer>) -> Result<(), Error> {
     Ok(())
 }
 
-/// Takes an IpAddr enum returns an IPv6 or IPv6-wrapped-IPv4 slice
+/// Takes an IpAddr enum, returns an IPv6 or IPv6-wrapped-IPv4 slice
 fn wrap_in_ipv6(ip: IpAddr) -> [u8; 16] {
     let mut bytes = [0u8; 16];
     match ip {
