@@ -1,6 +1,6 @@
 //! getaddress
-//! Builds a list of reachable Bitcoin nodes by impersonating one
-//! and sending `getaddr` messages to known nodes.
+//! Builds a list of reachable Bitcoin nodes by impersonating
+//! one and sending `getaddr` messages to known nodes.
 
 #![allow(clippy::redundant_field_names)]
 
@@ -201,7 +201,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let second = delta % 60;
 
     info!(
-        "found {} peers in {:02}h{:02}m{:02}s",
+        "discovered {} peers in {:02}h{:02}m{:02}s",
         peers.len(),
         hour,
         minute,
@@ -210,7 +210,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let path = Path::new(OUTPUT_DIR).join(filename);
     match dump_to_file(&path, &peers) {
-        Ok(_) => info!("wrote {} peers to {}", peers.len(), path.display()),
+        Ok(_) => info!("{} peers written to {}", peers.len(), path.display()),
         Err(e) => error!("failed to write peers to {}: {}", filename, e),
     };
 
@@ -315,8 +315,6 @@ fn get_address(
                                     let new_peers =
                                         parse_addr_response(&mut payload, peer_ip, peer_port);
 
-                                    debug!("added {} peers to db", new_peers.len());
-
                                     // only add new peers if they are responsive (make a successful handshake)
                                     for peer in new_peers {
                                         // catch SIGINT
@@ -330,22 +328,24 @@ fn get_address(
                                             Duration::from_secs(REQUEST_TIMEOUT),
                                         ) {
                                             Ok(mut stream) => {
-                                                if let Ok(true) =
-                                                    handshake(&mut stream, network_magic)
-                                                {
-                                                    match peer.ip {
-                                                        IpAddr::V4(ip) => info!(
-                                                            "new peer discovered @ {}:{}",
-                                                            ip, peer.port
-                                                        ),
-                                                        IpAddr::V6(ip) => info!(
-                                                            "new peer discovered @ [{}]:{}",
-                                                            ip, peer.port
-                                                        ),
-                                                    }
-
+                                                if let Ok(true) = handshake(&mut stream, network_magic) {
                                                     if let Ok(mut peers_guard) = peers.lock() {
+                                                        match peer.ip {
+                                                            IpAddr::V4(ip) => info!(
+                                                                "new peer discovered @ {}:{}",
+                                                                ip, peer.port
+                                                            ),
+                                                            IpAddr::V6(ip) => info!(
+                                                                "new peer discovered @ [{}]:{}",
+                                                                ip, peer.port
+                                                            ),
+                                                        }
+                                                        
                                                         peers_guard.push(peer);
+                                                        
+                                                        if peers_guard.len() % 21 == 0 {
+                                                            info!("{} peers in the db", peers_guard.len());
+                                                        }
                                                     }
                                                 }
                                             }
