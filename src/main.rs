@@ -2,6 +2,7 @@
 //! Builds a list of reachable Bitcoin nodes by impersonating
 //! one and sending `getaddr` messages to known nodes.
 
+#![allow(unused_parens)]
 #![allow(clippy::redundant_field_names)]
 
 use clap::builder::PossibleValuesParser;
@@ -16,6 +17,7 @@ use log::error;
 use log::info;
 use log::warn;
 use log::Record;
+use maxminddb::Reader;
 use rand::Rng;
 use rayon::ThreadPoolBuilder;
 use sha2::Digest;
@@ -36,7 +38,8 @@ use std::path::PathBuf;
 use std::str;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use std::sync::Mutex;
 use std::time::Duration;
 use std::time::Instant;
 use std::time::SystemTime;
@@ -46,6 +49,7 @@ static RUNNING: AtomicBool = AtomicBool::new(true);
 
 const REQUEST_TIMEOUT: u64 = 2;
 const OUTPUT_DIR: &str = "output";
+const GEOLITE_DB: &str = "geolite2-asn.mmdb";
 
 const PROTOCOL_VERSION: u32 = 70013;
 
@@ -88,38 +92,68 @@ const SEEDS_SIGNET: &[&str] = &[
 #[derive(Parser, Debug)]
 #[command(version, about="getaddress\nA P2P crawler for all Bitcoin networks", long_about = None)]
 struct Args {
-    #[arg(long, help="Network to crawl", value_parser = PossibleValuesParser::new(["mainnet", "testnet", "signet", "regtest"]))]
-    network: Option<String>,
 
-    #[arg(long, help = "Wheter to log below info")]
-    debug: Option<bool>,
+    #[arg(long, alias="net", default_value_t=("mainnet".to_string()), help="Network to crawl", value_parser = PossibleValuesParser::new(["mainnet", "testnet4", "signet", "regtest"]))]
+    network: String,
+
+    #[rustfmt::skip]
+    #[arg(long, default_value_t = true, help = "Wheter to query GeoLite's ASN DB")]
+    query_asn: bool,
+
+    #[arg(long, default_value_t = false, help = "Wheter to log below info")]
+    debug: bool,
 }
 
 #[derive(Debug, Hash, Eq, PartialEq, PartialOrd, Ord)]
 struct Peer {
     ip: IpAddr,
     port: u16,
+    asn: Option<u32>,
+    org: Option<String>,
+}
+
+struct LookupAS {
+    reader: Reader<Vec<u8>>,
+}
+
+impl LookupAS {
+    pub fn new<P: AsRef<Path>>(db_path: P) -> Result<Self, maxminddb::MaxMindDBError> {
+        let reader = Reader::open_readfile(db_path)?;
+
+        Ok(Self { reader })
+    }
+
+    pub fn lookup_peer(&self, peer: &mut Peer) -> Result<(), maxminddb::MaxMindDBError> {
+        match self.reader.lookup::<maxminddb::geoip2::Asn>(peer.ip) {
+            Ok(record) => {
+                peer.asn = record.autonomous_system_number;
+                peer.org = record
+                    .autonomous_system_organization
+                    .map(|org| org.to_string());
+
+                Ok(())
+            }
+            Err(maxminddb::MaxMindDBError::AddressNotFoundError(_)) => Ok(()),
+            Err(e) => Err(e),
+        }
+    }
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
     let mut rng = rand::thread_rng();
 
-    match &args.debug {
-        Some(true) => setup_logger(true).unwrap(),
-        Some(false) | None => setup_logger(false).unwrap(),
-    };
+    setup_logger(args.debug).unwrap();
 
+    let network = &args.network;
+    let timestamp = chrono::Local::now().format("%Y%m%d%H%M%S");
     #[rustfmt::skip]
-    let (network_magic, port, dns_seeds, filename) = match &args.network {
-        Some(network) => match network.as_str() {
-            "mainnet" => (MAGIC_MAINNET, PORT_MAINNET, SEEDS_MAINNET, "mainnet-nodes.txt"),
-            "testnet" => (MAGIC_TESTNET,PORT_TESTNET,SEEDS_TESTNET, "testnet-nodes.txt"),
-            "signet" => (MAGIC_SIGNET, PORT_SIGNET, SEEDS_SIGNET, "signet-nodes.txt"),
-            "regtest" => (MAGIC_REGTEST,PORT_REGTEST, &["localhost"][..], "regtest-nodes.txt"),
-            _ => std::process::exit(1),
-        },
-        None => (MAGIC_MAINNET, PORT_MAINNET, SEEDS_MAINNET, "mainnet-nodes.txt"),
+    let (network_magic, port, dns_seeds, filename) = match network.as_str() {
+        "mainnet" => (MAGIC_MAINNET, PORT_MAINNET, SEEDS_MAINNET, format!("mainnet-{}.txt", timestamp)),
+        "testnet4" => (MAGIC_TESTNET, PORT_TESTNET, SEEDS_TESTNET, format!("testnet4-{}.txt", timestamp)),
+        "signet" => (MAGIC_SIGNET, PORT_SIGNET, SEEDS_SIGNET, format!("signet-{}.txt", timestamp)),
+        "regtest" => (MAGIC_REGTEST, PORT_REGTEST, &["localhost"][..], format!("regtest-{}.txt", timestamp)),
+        _ => (MAGIC_MAINNET, PORT_MAINNET, SEEDS_MAINNET, format!("mainnet-{}.txt", timestamp)),
     };
 
     let t_0 = Instant::now();
@@ -135,15 +169,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         peers.push(Peer {
             ip: seed,
             port: port,
+            asn: None,
+            org: None,
         });
     }
 
     ctrlc::set_handler(move || {
-        info!("received SIGINT, shutting down...");
+        info!("received SIGINT. shutting down, this may take a while...");
         RUNNING.store(false, Ordering::SeqCst);
     })?;
 
-    // run get_address on `$(( $nproc) - 2 ))` threads
+    // run get_address on `$(($nproc)-2))` threads
     let peers = Arc::new(Mutex::new(peers));
     let pool = ThreadPoolBuilder::new()
         .num_threads(n_threads)
@@ -161,7 +197,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let peer = {
                         let peers_guard = peers_clone.lock().unwrap();
                         if peers_guard.is_empty() {
-                            break; // If no peers, exit the loop
+                            break;
                         }
                         let peer = &peers_guard[rng.gen_range(0..peers_guard.len())];
                         (peer.ip, peer.port)
@@ -171,6 +207,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             });
 
+            // throttle task spawning
             std::thread::sleep(Duration::from_millis(100));
         }
     });
@@ -207,11 +244,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         minute,
         second
     );
+    
+    if args.query_asn {
+        fill_asn(&mut peers);
+    }
 
-    let path = Path::new(OUTPUT_DIR).join(filename);
-    match dump_to_file(&path, &peers) {
-        Ok(_) => info!("{} peers written to {}", peers.len(), path.display()),
-        Err(e) => error!("failed to write peers to {}: {}", filename, e),
+    let path = Path::new(OUTPUT_DIR).join(network);
+    match dump_to_file(&path, &filename, &peers) {
+        Ok(_) => info!("{} peers written to {:?}", peers.len(), path.join(filename)),
+        Err(e) => error!("failed to write peers to {:?}: {}", path, e),
     };
 
     info!("done!");
@@ -307,6 +348,10 @@ fn get_address(
 
                     let mut recv_command = "";
                     while recv_command != "addr" {
+                        // catch SIGINT
+                        if !RUNNING.load(Ordering::Relaxed) {
+                            return;
+                        }
                         match read_message(&mut stream) {
                             Ok((command, mut payload)) => {
                                 if command == "addr" {
@@ -328,7 +373,9 @@ fn get_address(
                                             Duration::from_secs(REQUEST_TIMEOUT),
                                         ) {
                                             Ok(mut stream) => {
-                                                if let Ok(true) = handshake(&mut stream, network_magic) {
+                                                if let Ok(true) =
+                                                    handshake(&mut stream, network_magic)
+                                                {
                                                     if let Ok(mut peers_guard) = peers.lock() {
                                                         match peer.ip {
                                                             IpAddr::V4(ip) => info!(
@@ -340,11 +387,14 @@ fn get_address(
                                                                 ip, peer.port
                                                             ),
                                                         }
-                                                        
+
                                                         peers_guard.push(peer);
-                                                        
+
                                                         if peers_guard.len() % 21 == 0 {
-                                                            info!("{} peers in the db", peers_guard.len());
+                                                            info!(
+                                                                "{} peers in the db",
+                                                                peers_guard.len()
+                                                            );
                                                         }
                                                     }
                                                 }
@@ -500,6 +550,8 @@ fn parse_addr_response(payload: &mut Vec<u8>, peer_ip: IpAddr, peer_port: u16) -
         let peer = Peer {
             ip: ip_addr,
             port: port,
+            asn: None,
+            org: None,
         };
 
         new_peers.push(peer);
@@ -509,28 +561,46 @@ fn parse_addr_response(payload: &mut Vec<u8>, peer_ip: IpAddr, peer_port: u16) -
 }
 
 /// Dumps the Peer vector to a file
-fn dump_to_file(path: &PathBuf, peers: &Vec<Peer>) -> Result<(), Error> {
-    fs::create_dir_all(OUTPUT_DIR)?;
+fn dump_to_file(path: &PathBuf, filename: &String, peers: &Vec<Peer>) -> Result<(), Error> {
+    fs::create_dir_all(path)?;
 
-    if path.exists() {
-        match fs::remove_file(path) {
-            Ok(_) => {}
-            Err(e) => {
-                error!("error while deleting {:?}: {}", path, e);
-            }
-        };
-    }
+    let file_path = path.join(filename);
 
-    let mut file = File::create(path)?;
-
+    let mut file = File::create(&file_path)?;
+    
     for peer in peers {
-        writeln!(file, "{}:{}", peer.ip, peer.port)?;
+        if peer.asn.is_some() {
+            writeln!(
+                file,
+                "{}:{} / AS{:?} / {}",
+                peer.ip,
+                peer.port,
+                peer.asn.unwrap_or(0),
+                peer.org.clone().unwrap_or("NO DATA".to_string())
+            )?;
+        } else {
+            writeln!(file, "{}:{}", peer.ip, peer.port)?;
+        }
     }
 
     Ok(())
 }
 
-/// Takes an IpAddr enum, returns an IPv6 or IPv6-wrapped-IPv4 slice
+/// Query geolite2-asn.mmdb, try to fill ASN's and Org names
+fn fill_asn(peers: &mut Vec<Peer>) {
+    info!("looking up peer's ASNs...");
+
+    if let Ok(lookup_as) = LookupAS::new(GEOLITE_DB) {
+        for peer in peers {
+            let _ = lookup_as.lookup_peer(peer);
+        }
+        info!("peers ASNs filled!");
+    } else {
+        error!("error while reading {}, skipping AS tagging...", GEOLITE_DB);
+    }
+}
+
+/// Takes an IpAddr enum, return an IPv6 or IPv6-wrapped-IPv4 slice
 fn wrap_in_ipv6(ip: IpAddr) -> [u8; 16] {
     let mut bytes = [0u8; 16];
     match ip {
@@ -560,10 +630,10 @@ fn pad_vector(data: Vec<u8>, total_size: usize) -> Vec<u8> {
     padded
 }
 
-///  <=FC – This byte (0 ~ 252)
-///  =FD – The next two bytes (253 ~ 65_535)
-///  =FE – The next four bytes (65_536 ~ 4_294_967_295)
-///  =FF – The next eight bytes (4_294_967_296 ~ 18_446_744_073_709_551_615)
+/// first <= FC => This byte (0 ~ 252)
+/// first == FD => The next two bytes (253 ~ 65_535)
+/// first == FE => The next four bytes (65_536 ~ 4_294_967_295)
+/// first == FF => The next eight bytes (4_294_967_296 ~ 18_446_744_073_709_551_615)
 fn decode_compact_size(buffer: &mut Vec<u8>) -> usize {
     let first = buffer.remove(0);
     match first {
@@ -612,6 +682,7 @@ fn setup_logger(debug: bool) -> Result<(), fern::InitError> {
 
     let mut dispatchers = fern::Dispatch::new();
     let stdout_dispatcher = fern::Dispatch::new()
+        .level_for("maxminddb", log::LevelFilter::Warn)
         .format(formatter(true))
         .level(if debug {
             log::LevelFilter::Debug

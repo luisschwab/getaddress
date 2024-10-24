@@ -10,27 +10,68 @@ Takes a while: a handshake must be made with a potential peer in order for it to
 Usage
 ---
 
-```shell
-~$ cargo run -- --network mainnet
-[2024-10-24 01:05:53 WARN getaddress] failed to connect to 2001:4060:4419:8001::42:8333: Network is unreachable (os error 101)
-[2024-10-24 01:05:54 INFO getaddress] starting handshake with 5.128.87.126:8333
-[2024-10-24 01:05:54 INFO getaddress] successful handshake with 5.128.87.126:8333
-[2024-10-24 01:05:56 INFO getaddress] starting handshake with 174.71.24.107:8333
-[2024-10-24 01:05:56 INFO getaddress] starting handshake with 109.123.235.225:8333
-[2024-10-24 01:05:56 INFO getaddress] successful handshake with 174.71.24.107:8333
-[2024-10-24 01:05:56 INFO getaddress] new peer discovered @ 174.71.24.107:8333
-[2024-10-24 01:05:57 INFO getaddress] starting handshake with 3.138.158.248:8333
-[2024-10-24 01:05:57 INFO getaddress] successful handshake with 109.123.235.225:8333
-[2024-10-24 01:05:57 INFO getaddress] new peer discovered @ 109.123.235.225:8333
-[2024-10-24 01:05:57 INFO getaddress] successful handshake with 3.138.158.248:8333
-[2024-10-24 01:05:57 INFO getaddress] new peer discovered @ 3.138.158.248:8333
-[2024-10-24 01:05:57 INFO getaddress] starting handshake with 185.250.243.159:8333
-^C[2024-10-24 01:05:57 INFO getaddress] received SIGINT, shutting down...
-[2024-10-24 01:05:57 INFO getaddress] successful handshake with 185.250.243.159:8333
-[2024-10-24 01:05:57 INFO getaddress] new peer discovered @ 185.250.243.159:8333
-[2024-10-24 01:05:59 INFO getaddress] found 43 peers in 00h00m24s
-[2024-10-24 01:05:59 INFO getaddress] wrote 43 peers to output/mainnet-nodes.txt
-[2024-10-24 01:05:59 INFO getaddress] done!
+```
+$ cargo run -- --net testnet4
+[2024-10-24 18:37:46 INFO getaddress] starting handshake with 103.99.168.212:48333
+[2024-10-24 18:37:46 INFO getaddress] successful handshake with 103.99.168.212:48333
+[2024-10-24 18:37:46 INFO getaddress] starting handshake with 103.99.171.212:48333
+[2024-10-24 18:37:46 INFO getaddress] starting handshake with 103.99.168.212:48333
+[2024-10-24 18:37:47 INFO getaddress] starting handshake with 103.99.171.214:48333
+[2024-10-24 18:37:47 INFO getaddress] starting handshake with 45.142.17.140:48333
+[2024-10-24 18:37:47 INFO getaddress] successful handshake with 103.99.171.212:48333
+[2024-10-24 18:37:47 INFO getaddress] successful handshake with 103.99.168.212:48333
+[2024-10-24 18:37:47 INFO getaddress] successful handshake with 103.99.171.214:48333
+[2024-10-24 18:37:47 INFO getaddress] successful handshake with 45.142.17.140:48333
+[2024-10-24 18:37:48 INFO getaddress] starting handshake with 2a01:4f8:c012:81c0::1:48333
+[2024-10-24 18:37:48 INFO getaddress] starting handshake with 2a01:4f8:c012:81c0::1:48333
+[2024-10-24 18:37:48 INFO getaddress] successful handshake with 2a01:4f8:c012:81c0::1:48333
+[2024-10-24 18:37:48 INFO getaddress] new peer discovered @ [2a01:4f8:c012:81c0::1]:48333
+[2024-10-24 18:38:00 INFO getaddress] 42 peers in the db
+[2024-10-24 18:38:01 INFO getaddress] starting handshake with 2401:b140:2::92:205:48333
+[2024-10-24 18:38:01 INFO getaddress] successful handshake with 2401:b140:2::92:205:48333
+[2024-10-24 18:38:01 INFO getaddress] new peer discovered @ [2401:b140:2::92:205]:48333
+[2024-10-24 18:38:05 INFO getaddress] starting handshake with 2401:b140:4::92:212:48333
+[2024-10-24 18:38:06 INFO getaddress] successful handshake with 2401:b140:4::92:212:48333
+[2024-10-24 18:38:06 INFO getaddress] new peer discovered @ [2401:b140:4::92:212]:48333
+[2024-10-24 18:38:07 INFO getaddress] starting handshake with 2401:b140:2::92:209:48333
+[2024-10-24 18:38:07 INFO getaddress] successful handshake with 2401:b140:2::92:209:48333
+[2024-10-24 18:38:07 INFO getaddress] new peer discovered @ [2401:b140:2::92:209]:48333
+^C[2024-10-24 18:38:08 INFO getaddress] received SIGINT. shutting down, this may take a while...
+[2024-10-24 18:38:10 INFO getaddress] discovered 37 peers in 00h00m24s
+[2024-10-24 18:38:10 INFO getaddress] looking up peer's ASNs...
+[2024-10-24 18:38:10 INFO getaddress] peers ASNs filled!
+[2024-10-24 18:38:10 INFO getaddress] 45 peers written to "output/testnet4/testnet4-20241024183745.txt"
+[2024-10-24 18:38:10 INFO getaddress] done!
+
+~$ cat output/testnet4/testnet4-20241024183745.txt
+2.59.134.244:48333 / AS58212 / dataforest GmbH
+18.189.156.102:48333 / AS16509 / AMAZON-02
+45.142.17.140:48333 / AS206238 / Freedom Internet BV
+50.126.96.22:48333 / AS20055 / AS-WHOLESAIL
+89.117.52.73:48333 / AS51167 / Contabo GmbH
+103.99.168.203:48333 / AS54415 / WIZ K.K.
+103.99.168.204:48333 / AS54415 / WIZ K.K.
+103.99.168.205:48333 / AS54415 / WIZ K.K.
+103.99.168.207:48333 / AS54415 / WIZ K.K.
+103.99.168.210:48333 / AS54415 / WIZ K.K.
+103.99.168.212:48333 / AS54415 / WIZ K.K.
+103.99.168.214:48333 / AS54415 / WIZ K.K.
+103.99.171.204:48333 / AS54415 / WIZ K.K.
+103.99.171.207:48333 / AS54415 / WIZ K.K.
+103.99.171.208:48333 / AS54415 / WIZ K.K.
+103.99.171.209:48333 / AS54415 / WIZ K.K.
+103.99.171.212:48333 / AS54415 / WIZ K.K.
+103.99.171.213:48333 / AS54415 / WIZ K.K.
+103.99.171.214:48333 / AS54415 / WIZ K.K.
+103.165.192.202:48333 / AS142052 / Mempool Space K.K.
+103.165.192.207:48333 / AS142052 / Mempool Space K.K.
+148.51.196.40:48333 / AS12025 / IMDC-AS12025
+186.233.184.40:48333 / AS262287 / Latitude.sh LTDA
+2001:df6:7280::92:204:48333 / AS142052 / Mempool Space K.K.
+2001:df6:7280::92:208:48333 / AS142052 / Mempool Space K.K.
+2001:df6:7280::92:211:48333 / AS142052 / Mempool Space K.K.
+2001:df6:7280::92:212:48333 / AS142052 / Mempool Space K.K.
+2401:b140:2::92:202:48333 / AS54415 / WIZ K.K.
 ```
 
 
@@ -106,7 +147,7 @@ network_IP Structure
 
 TODO
 ---
-- [ ] Use GeoLite2-ASN.mmdb to determine AS's stakes in node hosting
+- [X] Use GeoLite2-ASN.mmdb to determine AS's stakes in node hosting
 - [ ] Add `addrv2` support
 - [ ] Add Tor support
 - [ ] Add I2P support
