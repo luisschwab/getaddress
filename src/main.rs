@@ -16,7 +16,6 @@ use log::error;
 use log::info;
 use log::warn;
 use log::Record;
-
 use rand::Rng;
 use rayon::ThreadPoolBuilder;
 use sha2::Digest;

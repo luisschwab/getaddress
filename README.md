@@ -1,33 +1,36 @@
 getaddress
 ---
 
-Builds a list of reachable Bitcoin nodes by impersonating one and sending `getaddr` messages to known nodes.
+Builds a list of reachable Bitcoin nodes by impersonating one and continuously sending `getaddr` messages to other known nodes.
 
 Supports all networks: `mainnet`, `testnet4`, `signet`, `regtest`.
 
-Takes a while: a handshake must be made to a potential peer in order for it to be considered valid.
+Takes a while: a handshake must be made with a potential peer in order for it to be considered valid and added to the list.
 
 Usage
 ---
 
 ```shell
 ~$ cargo run -- --network mainnet
-[2024-10-22 20:25:16 INFO getaddress] starting handshake with 2001:4060:4419:8001::42:8333
-[2024-10-22 20:25:16 INFO getaddress] successful handshake with 2001:4060:4419:8001::42:8333
-[2024-10-22 20:25:17 INFO getaddress] new peer discovered @ 111.22.174.235:8333
-[2024-10-22 20:25:17 INFO getaddress] new peer discovered @ 120.202.91.178:8333
-[2024-10-22 20:25:17 INFO getaddress] new peer discovered @ 91.44.107.42:8333
-[2024-10-22 20:25:17 INFO getaddress] new peer discovered @ [2001:9e8:20c:ce00:ad60:1561:ffee:d898]:8333
-[2024-10-22 20:25:17 INFO getaddress] new peer discovered @ 222.71.166.242:8333
-[2024-10-22 20:25:17 INFO getaddress] new peer discovered @ [2001:1620:542c:210::100]:8333
-[2024-10-22 20:25:17 INFO getaddress] new peer discovered @ 82.16.56.226:8333
-[2024-10-22 20:25:17 INFO getaddress] new peer discovered @ 35.240.132.22:8333
-[2024-10-22 20:25:17 INFO getaddress] new peer discovered @ 185.65.134.247:8333
-[2024-10-22 20:25:17 INFO getaddress] new peer discovered @ 86.120.131.172:8333
-^C[2024-10-22 20:25:18 INFO getaddress] received SIGINT, shutting down...
-[2024-10-22 20:25:18 INFO getaddress] found 3003 peers
-[2024-10-22 20:25:18 INFO getaddress] wrote 3003 peers to output/mainnet-nodes.txt
-[2024-10-22 20:25:18 INFO getaddress] done!
+[2024-10-24 01:05:53 WARN getaddress] failed to connect to 2001:4060:4419:8001::42:8333: Network is unreachable (os error 101)
+[2024-10-24 01:05:54 INFO getaddress] starting handshake with 5.128.87.126:8333
+[2024-10-24 01:05:54 INFO getaddress] successful handshake with 5.128.87.126:8333
+[2024-10-24 01:05:56 INFO getaddress] starting handshake with 174.71.24.107:8333
+[2024-10-24 01:05:56 INFO getaddress] starting handshake with 109.123.235.225:8333
+[2024-10-24 01:05:56 INFO getaddress] successful handshake with 174.71.24.107:8333
+[2024-10-24 01:05:56 INFO getaddress] new peer discovered @ 174.71.24.107:8333
+[2024-10-24 01:05:57 INFO getaddress] starting handshake with 3.138.158.248:8333
+[2024-10-24 01:05:57 INFO getaddress] successful handshake with 109.123.235.225:8333
+[2024-10-24 01:05:57 INFO getaddress] new peer discovered @ 109.123.235.225:8333
+[2024-10-24 01:05:57 INFO getaddress] successful handshake with 3.138.158.248:8333
+[2024-10-24 01:05:57 INFO getaddress] new peer discovered @ 3.138.158.248:8333
+[2024-10-24 01:05:57 INFO getaddress] starting handshake with 185.250.243.159:8333
+^C[2024-10-24 01:05:57 INFO getaddress] received SIGINT, shutting down...
+[2024-10-24 01:05:57 INFO getaddress] successful handshake with 185.250.243.159:8333
+[2024-10-24 01:05:57 INFO getaddress] new peer discovered @ 185.250.243.159:8333
+[2024-10-24 01:05:59 INFO getaddress] found 43 peers in 00h00m24s
+[2024-10-24 01:05:59 INFO getaddress] wrote 43 peers to output/mainnet-nodes.txt
+[2024-10-24 01:05:59 INFO getaddress] done!
 ```
 
 
