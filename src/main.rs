@@ -47,7 +47,7 @@ use std::time::UNIX_EPOCH;
 
 static RUNNING: AtomicBool = AtomicBool::new(true);
 
-const REQUEST_TIMEOUT: u64 = 2;
+const REQUEST_TIMEOUT: u64 = 3; // seconds
 const OUTPUT_DIR: &str = "output";
 const GEOLITE_DB: &str = "geolite2-asn.mmdb";
 
@@ -90,9 +90,8 @@ const SEEDS_SIGNET: &[&str] = &[
 ];
 
 #[derive(Parser, Debug)]
-#[command(version, about="getaddress\nA P2P crawler for all Bitcoin networks", long_about = None)]
+#[command(version, name="getaddress", about="getaddress\nA P2P crawler for all Bitcoin networks", long_about = None)]
 struct Args {
-
     #[arg(long, alias="net", default_value_t=("mainnet".to_string()), help="Network to crawl", value_parser = PossibleValuesParser::new(["mainnet", "testnet4", "signet", "regtest"]))]
     network: String,
 
@@ -157,7 +156,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let t_0 = Instant::now();
-    let n_threads = std::cmp::max(1, num_cpus::get() - 2);
+    let n_threads = std::cmp::max(1, num_cpus::get());
 
     // Pick a random seed node from DNS seeder's record
     let dns_seeder = dns_seeds[rng.gen_range(0..dns_seeds.len())];
@@ -179,7 +178,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         RUNNING.store(false, Ordering::SeqCst);
     })?;
 
-    // run get_address on `$(($nproc)-2))` threads
+    // run get_address on multiple threads
     let peers = Arc::new(Mutex::new(peers));
     let pool = ThreadPoolBuilder::new()
         .num_threads(n_threads)
@@ -229,8 +228,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
+    let peers_len_before = peers.len();
     peers.sort();
     peers.dedup();
+    let peers_len_after = peers.len();
+    info!(
+        "deduped peers list: from {} to {} peers",
+        peers_len_before, peers_len_after
+    );
 
     let delta = t_0.elapsed().as_secs();
     let hour = delta / 3600;
@@ -238,13 +243,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let second = delta % 60;
 
     info!(
-        "discovered {} peers in {:02}h{:02}m{:02}s",
+        "discovered {} unique peers in {:02}h{:02}m{:02}s",
         peers.len(),
         hour,
         minute,
         second
     );
-    
+
     if args.query_asn {
         fill_asn(&mut peers);
     }
@@ -304,7 +309,11 @@ fn handshake(stream: &mut TcpStream, network_magic: &[u8]) -> Result<bool, Error
     let _ = stream.write_all(&send_verack);
     debug!("sent verack to {}:{}", peer_ip, peer_port);
 
-    info!("successful handshake with {}:{}", peer_ip, peer_port);
+    match peer_ip {
+        IpAddr::V4(_) => info!("successful handshake with {}:{}", peer_ip, peer_port),
+        IpAddr::V6(_) => info!("successful handshake with [{}]:{}", peer_ip, peer_port),
+    }
+
     Ok(true)
 }
 
@@ -360,13 +369,13 @@ fn get_address(
                                     let new_peers =
                                         parse_addr_response(&mut payload, peer_ip, peer_port);
 
-                                    // only add new peers if they are responsive (make a successful handshake)
                                     for peer in new_peers {
                                         // catch SIGINT
                                         if !RUNNING.load(Ordering::Relaxed) {
                                             return;
                                         }
-
+                                        
+                                        // only add new peers if they are responsive (make a successful handshake)
                                         let socket_addr = SocketAddr::new(peer.ip, peer.port);
                                         match TcpStream::connect_timeout(
                                             &socket_addr,
@@ -387,12 +396,14 @@ fn get_address(
                                                                 ip, peer.port
                                                             ),
                                                         }
-
                                                         peers_guard.push(peer);
 
-                                                        if peers_guard.len() % 21 == 0 {
+                                                        if [7, 11, 13, 17, 19, 23, 29, 31, 37, 41]
+                                                            .iter()
+                                                            .any(|&p| peers_guard.len() % p == 0)
+                                                        {
                                                             info!(
-                                                                "{} peers in the db",
+                                                                "{} non-unique peers in the db",
                                                                 peers_guard.len()
                                                             );
                                                         }
@@ -567,7 +578,7 @@ fn dump_to_file(path: &PathBuf, filename: &String, peers: &Vec<Peer>) -> Result<
     let file_path = path.join(filename);
 
     let mut file = File::create(&file_path)?;
-    
+
     for peer in peers {
         if peer.asn.is_some() {
             writeln!(

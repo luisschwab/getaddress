@@ -11,39 +11,37 @@ Usage
 ---
 
 ```
-$ cargo run -- --net testnet4
-[2024-10-24 18:37:46 INFO getaddress] starting handshake with 103.99.168.212:48333
-[2024-10-24 18:37:46 INFO getaddress] successful handshake with 103.99.168.212:48333
-[2024-10-24 18:37:46 INFO getaddress] starting handshake with 103.99.171.212:48333
-[2024-10-24 18:37:46 INFO getaddress] starting handshake with 103.99.168.212:48333
-[2024-10-24 18:37:47 INFO getaddress] starting handshake with 103.99.171.214:48333
-[2024-10-24 18:37:47 INFO getaddress] starting handshake with 45.142.17.140:48333
-[2024-10-24 18:37:47 INFO getaddress] successful handshake with 103.99.171.212:48333
-[2024-10-24 18:37:47 INFO getaddress] successful handshake with 103.99.168.212:48333
-[2024-10-24 18:37:47 INFO getaddress] successful handshake with 103.99.171.214:48333
-[2024-10-24 18:37:47 INFO getaddress] successful handshake with 45.142.17.140:48333
-[2024-10-24 18:37:48 INFO getaddress] starting handshake with 2a01:4f8:c012:81c0::1:48333
-[2024-10-24 18:37:48 INFO getaddress] starting handshake with 2a01:4f8:c012:81c0::1:48333
-[2024-10-24 18:37:48 INFO getaddress] successful handshake with 2a01:4f8:c012:81c0::1:48333
-[2024-10-24 18:37:48 INFO getaddress] new peer discovered @ [2a01:4f8:c012:81c0::1]:48333
-[2024-10-24 18:38:00 INFO getaddress] 42 peers in the db
-[2024-10-24 18:38:01 INFO getaddress] starting handshake with 2401:b140:2::92:205:48333
-[2024-10-24 18:38:01 INFO getaddress] successful handshake with 2401:b140:2::92:205:48333
-[2024-10-24 18:38:01 INFO getaddress] new peer discovered @ [2401:b140:2::92:205]:48333
-[2024-10-24 18:38:05 INFO getaddress] starting handshake with 2401:b140:4::92:212:48333
-[2024-10-24 18:38:06 INFO getaddress] successful handshake with 2401:b140:4::92:212:48333
-[2024-10-24 18:38:06 INFO getaddress] new peer discovered @ [2401:b140:4::92:212]:48333
-[2024-10-24 18:38:07 INFO getaddress] starting handshake with 2401:b140:2::92:209:48333
-[2024-10-24 18:38:07 INFO getaddress] successful handshake with 2401:b140:2::92:209:48333
-[2024-10-24 18:38:07 INFO getaddress] new peer discovered @ [2401:b140:2::92:209]:48333
-^C[2024-10-24 18:38:08 INFO getaddress] received SIGINT. shutting down, this may take a while...
-[2024-10-24 18:38:10 INFO getaddress] discovered 37 peers in 00h00m24s
-[2024-10-24 18:38:10 INFO getaddress] looking up peer's ASNs...
-[2024-10-24 18:38:10 INFO getaddress] peers ASNs filled!
-[2024-10-24 18:38:10 INFO getaddress] 45 peers written to "output/testnet4/testnet4-20241024183745.txt"
-[2024-10-24 18:38:10 INFO getaddress] done!
+~$ cargo run -- --net testnet4
+[2024-10-24 21:07:05 INFO getaddress] starting handshake with 203.132.94.196:48333
+[2024-10-24 21:07:05 INFO getaddress] starting handshake with 85.208.69.71:48333
+[2024-10-24 21:07:05 INFO getaddress] successful handshake with 203.132.94.196:48333
+[2024-10-24 21:07:05 INFO getaddress] new peer discovered @ 203.132.94.196:48333
+[2024-10-24 21:07:05 INFO getaddress] successful handshake with 85.208.69.71:48333
+[2024-10-24 21:07:05 INFO getaddress] new peer discovered @ 85.208.69.71:48333
+[2024-10-24 21:07:05 INFO getaddress] 51 non-unique peers in the db
+[2024-10-24 21:07:06 INFO getaddress] starting handshake with 103.99.171.211:48333
+[2024-10-24 21:07:06 INFO getaddress] successful handshake with 103.99.171.211:48333
+[2024-10-24 21:07:06 INFO getaddress] new peer discovered @ 103.99.171.211:48333
+[2024-10-24 21:07:06 INFO getaddress] 52 non-unique peers in the db
+[2024-10-24 21:07:15 INFO getaddress] starting handshake with 176.112.177.138:48333
+[2024-10-24 21:07:15 INFO getaddress] successful handshake with 176.112.177.138:48333
+[2024-10-24 21:07:15 INFO getaddress] new peer discovered @ 176.112.177.138:48333
+[2024-10-24 21:07:16 INFO getaddress] starting handshake with 103.165.192.214:48333
+[2024-10-24 21:07:17 INFO getaddress] successful handshake with 103.165.192.214:48333
+[2024-10-24 21:07:17 INFO getaddress] new peer discovered @ 103.165.192.214:48333
+^C[2024-10-24 21:07:19 INFO getaddress] received SIGINT. shutting down, this may take a while...
+[2024-10-24 21:07:19 INFO getaddress] starting handshake with 2001:df6:7280::92:207:48333
+[2024-10-24 21:07:19 INFO getaddress] successful handshake with [2001:df6:7280::92:207]:48333
+[2024-10-24 21:07:19 INFO getaddress] new peer discovered @ [2001:df6:7280::92:207]:48333
+[2024-10-24 21:07:19 INFO getaddress] 55 non-unique peers in the db
+[2024-10-24 21:07:21 INFO getaddress] deduped peers list: from 55 to 44 peers
+[2024-10-24 21:07:21 INFO getaddress] discovered unique 44 peers in 00h01m12s
+[2024-10-24 21:07:21 INFO getaddress] looking up peer's ASNs...
+[2024-10-24 21:07:21 INFO getaddress] peers ASNs filled!
+[2024-10-24 21:07:21 INFO getaddress] 44 peers written to "output/testnet4/testnet4-20241024210608.txt"
+[2024-10-24 21:07:21 INFO getaddress] done!
 
-~$ cat output/testnet4/testnet4-20241024183745.txt
+~$ cat output/testnet4/testnet4-2024102421021.txt
 2.59.134.244:48333 / AS58212 / dataforest GmbH
 18.189.156.102:48333 / AS16509 / AMAZON-02
 45.142.17.140:48333 / AS206238 / Freedom Internet BV
@@ -72,8 +70,8 @@ $ cargo run -- --net testnet4
 2001:df6:7280::92:211:48333 / AS142052 / Mempool Space K.K.
 2001:df6:7280::92:212:48333 / AS142052 / Mempool Space K.K.
 2401:b140:2::92:202:48333 / AS54415 / WIZ K.K.
+...
 ```
-
 
 Sequence Diagram
 ---
