@@ -78,15 +78,15 @@ const SEEDS_MAINNET: &[&str] = &[
     "seed.flowee.cash",
     "seed.mainnet.achownodes.xyz",
 ];
-
+#[rustfmt::skip]
 const SEEDS_TESTNET: &[&str] = &[
     "seed.testnet4.bitcoin.sprovoost.nl",
-    "seed.testnet4.wiz.biz",
+    "seed.testnet4.wiz.biz"
 ];
-
+#[rustfmt::skip]
 const SEEDS_SIGNET: &[&str] = &[
     "seed.signet.achownodes.xyz",
-    "seed.signet.bitcoin.sprovoost.nl",
+    "seed.signet.bitcoin.sprovoost.nl"
 ];
 
 #[derive(Parser, Debug)]
@@ -126,9 +126,7 @@ impl LookupAS {
         match self.reader.lookup::<maxminddb::geoip2::Asn>(peer.ip) {
             Ok(record) => {
                 peer.asn = record.autonomous_system_number;
-                peer.org = record
-                    .autonomous_system_organization
-                    .map(|org| org.to_string());
+                peer.org = record.autonomous_system_organization.map(|org| org.to_string());
 
                 Ok(())
             }
@@ -174,16 +172,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     ctrlc::set_handler(move || {
-        info!("received SIGINT. shutting down, this may take a while...");
+        info!("received SIGINT: shutting down, this may take a while...");
         RUNNING.store(false, Ordering::SeqCst);
     })?;
 
     // run get_address on multiple threads
     let peers = Arc::new(Mutex::new(peers));
-    let pool = ThreadPoolBuilder::new()
-        .num_threads(n_threads)
-        .build()
-        .unwrap();
+    let pool = ThreadPoolBuilder::new().num_threads(n_threads).build().unwrap();
 
     pool.scope(|s| {
         while RUNNING.load(Ordering::SeqCst) {
@@ -215,15 +210,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Ok(mutex) => match mutex.into_inner() {
             Ok(peers) => peers,
             Err(e) => {
-                error!("failed to unwrap peers mutex: {}", e);
+                error!("failed to unwrap peer's vector mutex: {}", e);
                 std::process::exit(-1);
             }
         },
         Err(e) => {
-            error!(
-                "failed to unwrap Arc: arc still has {} strong references",
-                Arc::strong_count(&e)
-            );
+            error!("failed to unwrap Arc: arc still has {} strong references", Arc::strong_count(&e));
             std::process::exit(-1);
         }
     };
@@ -232,10 +224,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     peers.sort();
     peers.dedup();
     let peers_len_after = peers.len();
-    info!(
-        "deduped peers list: from {} to {} peers",
-        peers_len_before, peers_len_after
-    );
+    info!("deduped peers list: from {} to {} peers", peers_len_before, peers_len_after);
 
     let delta = t_0.elapsed().as_secs();
     let hour = delta / 3600;
@@ -317,21 +306,16 @@ fn handshake(stream: &mut TcpStream, network_magic: &[u8]) -> Result<bool, Error
     Ok(true)
 }
 
-fn get_address(
-    peer_ip: IpAddr,
-    peer_port: u16,
-    network_magic: &[u8],
-    peers: Arc<Mutex<Vec<Peer>>>,
-) {
+fn get_address(peer_ip: IpAddr, peer_port: u16, network_magic: &[u8], peers: Arc<Mutex<Vec<Peer>>>) {
     let socket_addr = SocketAddr::new(peer_ip, peer_port);
     match TcpStream::connect_timeout(&socket_addr, Duration::from_secs(REQUEST_TIMEOUT)) {
-        Err(e) => warn!(
-            "failed to connect to {}:{}: {}",
-            socket_addr.ip(),
-            socket_addr.port(),
-            e
-        ),
+        Err(e) => warn!("failed to connect to {}:{}: {}", socket_addr.ip(), socket_addr.port(), e),
         Ok(mut stream) => {
+            // catch SIGINT
+            if !RUNNING.load(Ordering::Relaxed) {
+                return;
+            }
+
             // Set read and write timeouts
             if let Err(e) = stream.set_read_timeout(Some(Duration::from_secs(REQUEST_TIMEOUT))) {
                 error!("failed to set read timeout: {}", e);
@@ -366,35 +350,27 @@ fn get_address(
                                 if command == "addr" {
                                     recv_command = "addr";
                                     debug!("received {} from {}:{}", command, peer_ip, peer_port);
-                                    let new_peers =
-                                        parse_addr_response(&mut payload, peer_ip, peer_port);
+                                    let new_peers = parse_addr_response(&mut payload, peer_ip, peer_port);
 
                                     for peer in new_peers {
                                         // catch SIGINT
                                         if !RUNNING.load(Ordering::Relaxed) {
                                             return;
                                         }
-                                        
+
                                         // only add new peers if they are responsive (make a successful handshake)
                                         let socket_addr = SocketAddr::new(peer.ip, peer.port);
-                                        match TcpStream::connect_timeout(
-                                            &socket_addr,
-                                            Duration::from_secs(REQUEST_TIMEOUT),
-                                        ) {
+                                        match TcpStream::connect_timeout(&socket_addr, Duration::from_secs(REQUEST_TIMEOUT)) {
                                             Ok(mut stream) => {
-                                                if let Ok(true) =
-                                                    handshake(&mut stream, network_magic)
-                                                {
+                                                if let Ok(true) = handshake(&mut stream, network_magic) {
                                                     if let Ok(mut peers_guard) = peers.lock() {
                                                         match peer.ip {
-                                                            IpAddr::V4(ip) => info!(
-                                                                "new peer discovered @ {}:{}",
-                                                                ip, peer.port
-                                                            ),
-                                                            IpAddr::V6(ip) => info!(
-                                                                "new peer discovered @ [{}]:{}",
-                                                                ip, peer.port
-                                                            ),
+                                                            IpAddr::V4(ip) => {
+                                                                info!("new peer discovered @ {}:{}", ip, peer.port)
+                                                            }
+                                                            IpAddr::V6(ip) => {
+                                                                info!("new peer discovered @ [{}]:{}", ip, peer.port)
+                                                            }
                                                         }
                                                         peers_guard.push(peer);
 
@@ -402,10 +378,7 @@ fn get_address(
                                                             .iter()
                                                             .any(|&p| peers_guard.len() % p == 0)
                                                         {
-                                                            info!(
-                                                                "{} non-unique peers in the db",
-                                                                peers_guard.len()
-                                                            );
+                                                            info!("{} non-unique peers in the db", peers_guard.len());
                                                         }
                                                     }
                                                 }
@@ -416,10 +389,7 @@ fn get_address(
                                 }
                             }
                             Err(e) => {
-                                warn!(
-                                    "error reading message from {}:{}: {}",
-                                    peer_ip, peer_port, e
-                                );
+                                warn!("error reading message from {}:{}: {}", peer_ip, peer_port, e);
                                 return;
                             }
                         }
@@ -526,10 +496,7 @@ fn parse_addr_response(payload: &mut Vec<u8>, peer_ip: IpAddr, peer_port: u16) -
 
     // each element from addr is 30 bytes long
     let addr_count = decode_compact_size(payload) / 30;
-    debug!(
-        "received {} addresses from {}:{}",
-        addr_count, peer_ip, peer_port
-    );
+    debug!("received {} addresses from {}:{}", addr_count, peer_ip, peer_port);
 
     for _ in 0..addr_count {
         if payload.len() < 30 {
@@ -605,9 +572,9 @@ fn fill_asn(peers: &mut Vec<Peer>) {
         for peer in peers {
             let _ = lookup_as.lookup_peer(peer);
         }
-        info!("peers ASNs filled!");
+        info!("peer ASNs filled!");
     } else {
-        error!("error while reading {}, skipping AS tagging...", GEOLITE_DB);
+        error!("error while reading {}, skipping ASN tagging", GEOLITE_DB);
     }
 }
 
@@ -695,11 +662,7 @@ fn setup_logger(debug: bool) -> Result<(), fern::InitError> {
     let stdout_dispatcher = fern::Dispatch::new()
         .level_for("maxminddb", log::LevelFilter::Warn)
         .format(formatter(true))
-        .level(if debug {
-            log::LevelFilter::Debug
-        } else {
-            log::LevelFilter::Info
-        })
+        .level(if debug { log::LevelFilter::Debug } else { log::LevelFilter::Info })
         .chain(std::io::stdout());
 
     dispatchers = dispatchers.chain(stdout_dispatcher);
