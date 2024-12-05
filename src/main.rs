@@ -5,45 +5,28 @@
 #![allow(unused_parens)]
 #![allow(clippy::redundant_field_names)]
 
-use clap::builder::PossibleValuesParser;
-use clap::command;
-use clap::Parser;
+use clap::{builder::PossibleValuesParser, command, Parser};
 use dns_lookup::lookup_host;
-use fern::colors::Color;
-use fern::colors::ColoredLevelConfig;
-use fern::FormatCallback;
-use log::debug;
-use log::error;
-use log::info;
-use log::warn;
-use log::Record;
+use fern::{
+    colors::{Color, ColoredLevelConfig},
+    FormatCallback,
+};
+use log::{debug, error, info, warn, Record};
 use maxminddb::Reader;
 use rand::Rng;
 use rayon::ThreadPoolBuilder;
-use sha2::Digest;
-use sha2::Sha256;
+use sha2::{Digest, Sha256};
 use std::fmt::Arguments;
-use std::fs;
-use std::fs::File;
-use std::io::Error;
-use std::io::Read;
-use std::io::Write;
-use std::net::IpAddr;
-use std::net::Ipv4Addr;
-use std::net::Ipv6Addr;
-use std::net::SocketAddr;
-use std::net::TcpStream;
-use std::path::Path;
-use std::path::PathBuf;
+use std::io::{Error, Read, Write};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, TcpStream};
+use std::path::{Path, PathBuf};
 use std::str;
-use std::sync::atomic::AtomicBool;
-use std::sync::atomic::Ordering;
-use std::sync::Arc;
-use std::sync::Mutex;
-use std::time::Duration;
-use std::time::Instant;
-use std::time::SystemTime;
-use std::time::UNIX_EPOCH;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
+};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::{fs, fs::File};
 
 static RUNNING: AtomicBool = AtomicBool::new(true);
 
@@ -261,7 +244,10 @@ fn handshake(stream: &mut TcpStream, network_magic: &[u8]) -> Result<bool, Error
         Err(e) => return Err(e),
     };
 
-    info!("starting handshake with {}:{}", peer_ip, peer_port);
+    match peer_ip {
+        IpAddr::V4(_) => info!("starting handshake with {}:{}", peer_ip, peer_port),
+        IpAddr::V6(_) => info!("starting handshake with [{}]:{}", peer_ip, peer_port),
+    }
 
     // send `version`
     let version_payload = make_version_payload(peer_ip, peer_port);
@@ -564,7 +550,7 @@ fn dump_to_file(path: &PathBuf, filename: &String, peers: &Vec<Peer>) -> Result<
     Ok(())
 }
 
-/// Query geolite2-asn.mmdb, try to fill ASN's and Org names
+/// Query GEOLITE_DB, try to fill ASN's and Org names
 fn fill_asn(peers: &mut Vec<Peer>) {
     info!("looking up peer's ASNs...");
 
