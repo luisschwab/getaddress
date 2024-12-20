@@ -146,6 +146,7 @@ network_IP Structure
 TODO
 ---
 - [X] Use GeoLite2-ASN.mmdb to determine AS's stakes in node hosting
+- [ ] Export peer's user agent to file
 - [ ] Add `addrv2` support
 - [ ] Add Tor support
 - [ ] Add I2P support
