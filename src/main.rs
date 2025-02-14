@@ -224,6 +224,40 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if args.query_asn {
         fill_asn(&mut peers);
+
+        // compile ASN node amounts and share
+        let mut asn_nodes: HashMap<String, u32> = HashMap::new();
+
+        for peer in &peers {
+            let key = String::from(format!(
+                "AS{} {}",
+                peer.asn.unwrap_or(0),
+                peer.org.clone().unwrap_or("NO DATA".to_string())
+            ));
+            *asn_nodes.entry(key).or_insert(1) += 1;
+        }
+
+        let mut sorted_asn_nodes: Vec<_> = asn_nodes.into_iter().collect();
+        sorted_asn_nodes.sort_by(|a, b| b.1.cmp(&a.1));
+
+        let mut i = 0;
+        let mut accumulated = 0.0;
+        println!();
+        info!("AS node hosting stakes:");
+        for (k, v) in sorted_asn_nodes {
+            let stake = (100.0 * v as f64 / peers.len() as f64);
+            accumulated += stake;
+
+            info!("{}: {} ({:.2}%)", k, v, stake);
+
+            if i >= 25 || accumulated > 80.0 {
+                info!("OTHERS: ({:.2}%)", 100.0 - accumulated);
+
+                println!();
+                break;
+            }
+            i += 1;
+        }
     }
 
     let path = Path::new(OUTPUT_DIR).join(network);
