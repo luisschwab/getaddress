@@ -5,28 +5,27 @@
 #![allow(unused_parens)]
 #![allow(clippy::redundant_field_names)]
 
-use clap::{builder::PossibleValuesParser, command, Parser};
+use clap::builder::PossibleValuesParser;
+use clap::{command, Parser};
 use dns_lookup::lookup_host;
-use fern::{
-    colors::{Color, ColoredLevelConfig},
-    FormatCallback,
-};
+use fern::colors::{Color, ColoredLevelConfig};
+use fern::FormatCallback;
 use log::{debug, error, info, warn, Record};
 use maxminddb::Reader;
 use rand::Rng;
 use rayon::ThreadPoolBuilder;
 use sha2::{Digest, Sha256};
+use std::collections::HashMap;
 use std::fmt::Arguments;
+use std::fs::File;
 use std::io::{Error, Read, Write};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
-use std::str;
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc, Mutex,
-};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use std::{fs, fs::File};
+use std::{fs, str};
+use tokio::sync::broadcast;
 
 static RUNNING: AtomicBool = AtomicBool::new(true);
 
@@ -47,6 +46,7 @@ const PORT_SIGNET: u16 = 38333;
 const PORT_REGTEST: u16 = 18444;
 
 const SEEDS_MAINNET: &[&str] = &[
+    "seed.bitcoin.luisschwab.com",
     "dnsseed.bitcoin.dashjr.org",
     "dnsseed.bluematt.me",
     "dnsseed.emzy.de",
@@ -141,7 +141,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Pick a random seed node from DNS seeder's record
     let dns_seeder = dns_seeds[rng.gen_range(0..dns_seeds.len())];
-    let seeds = lookup_host(dns_seeder).unwrap();
+    let seeds = lookup_host(dns_seeder).expect("Failure on name resolution");
 
     let mut peers: Vec<Peer> = Vec::new();
 
@@ -154,9 +154,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
     }
 
-    ctrlc::set_handler(move || {
-        info!("received SIGINT: shutting down, this may take a while...");
-        RUNNING.store(false, Ordering::SeqCst);
+    let (shutdown_tx, _) = broadcast::channel(n_threads);
+
+    ctrlc::set_handler({
+        let shutdown_tx = shutdown_tx.clone();
+        move || {
+            info!("received SIGINT: shutting down, this may take a while...");
+            RUNNING.store(false, Ordering::SeqCst);
+            let _ = shutdown_tx.send(());
+        }
     })?;
 
     // run get_address on multiple threads
@@ -167,10 +173,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         while RUNNING.load(Ordering::SeqCst) {
             let peers_clone = Arc::clone(&peers);
 
+            let mut shutdown_rx = shutdown_tx.subscribe();
+
             s.spawn(move |_| {
                 let mut rng = rand::thread_rng();
 
                 while RUNNING.load(Ordering::SeqCst) {
+                    // try to receive shutdown signal
+                    if shutdown_rx.try_recv().is_ok() {
+                        return;
+                    }
+
                     let peer = {
                         let peers_guard = peers_clone.lock().unwrap();
                         if peers_guard.is_empty() {
@@ -179,6 +192,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let peer = &peers_guard[rng.gen_range(0..peers_guard.len())];
                         (peer.ip, peer.port)
                     };
+
+                    if !RUNNING.load(Ordering::SeqCst) {
+                        return;
+                    }
 
                     get_address(peer.0, peer.1, network_magic, peers_clone.clone());
                 }
@@ -203,11 +220,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
+    info!("deduping peer list...");
     let peers_len_before = peers.len();
     peers.sort();
     peers.dedup();
     let peers_len_after = peers.len();
-    info!("deduped peers list: from {} to {} peers", peers_len_before, peers_len_after);
+    info!("deduped peer list: from {} to {} peers", peers_len_before, peers_len_after);
 
     let delta = t_0.elapsed().as_secs();
     let hour = delta / 3600;
@@ -240,10 +258,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut sorted_asn_nodes: Vec<_> = asn_nodes.into_iter().collect();
         sorted_asn_nodes.sort_by(|a, b| b.1.cmp(&a.1));
 
+        info!("AS node hosting stakes:");
+
         let mut i = 0;
         let mut accumulated = 0.0;
-        println!();
-        info!("AS node hosting stakes:");
         for (k, v) in sorted_asn_nodes {
             let stake = (100.0 * v as f64 / peers.len() as f64);
             accumulated += stake;
@@ -253,7 +271,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if i >= 25 || accumulated > 80.0 {
                 info!("OTHERS: ({:.2}%)", 100.0 - accumulated);
 
-                println!();
                 break;
             }
             i += 1;
@@ -281,6 +298,16 @@ fn handshake(stream: &mut TcpStream, network_magic: &[u8]) -> Result<bool, Error
     match peer_ip {
         IpAddr::V4(_) => info!("starting handshake with {}:{}", peer_ip, peer_port),
         IpAddr::V6(_) => info!("starting handshake with [{}]:{}", peer_ip, peer_port),
+    }
+
+    // Set read and write timeouts
+    if let Err(e) = stream.set_read_timeout(Some(Duration::from_secs(REQUEST_TIMEOUT))) {
+        error!("failed to set read timeout: {}", e);
+        return Ok(false);
+    }
+    if let Err(e) = stream.set_write_timeout(Some(Duration::from_secs(REQUEST_TIMEOUT))) {
+        error!("failed to set write timeout: {}", e);
+        return Ok(false);
     }
 
     // send `version`
@@ -327,6 +354,10 @@ fn handshake(stream: &mut TcpStream, network_magic: &[u8]) -> Result<bool, Error
 }
 
 fn get_address(peer_ip: IpAddr, peer_port: u16, network_magic: &[u8], peers: Arc<Mutex<Vec<Peer>>>) {
+    if !RUNNING.load(Ordering::SeqCst) {
+        return;
+    }
+
     let socket_addr = SocketAddr::new(peer_ip, peer_port);
     match TcpStream::connect_timeout(&socket_addr, Duration::from_secs(REQUEST_TIMEOUT)) {
         Err(e) => warn!("failed to connect to {}:{}: {}", socket_addr.ip(), socket_addr.port(), e),
@@ -394,10 +425,7 @@ fn get_address(peer_ip: IpAddr, peer_port: u16, network_magic: &[u8], peers: Arc
                                                         }
                                                         peers_guard.push(peer);
 
-                                                        if [7, 11, 13, 17, 19, 23, 29, 31, 37, 41]
-                                                            .iter()
-                                                            .any(|&p| peers_guard.len() % p == 0)
-                                                        {
+                                                        if (peers_guard.len() % 5 == 0) {
                                                             info!("{} non-unique peers in the db", peers_guard.len());
                                                         }
                                                     }
@@ -512,6 +540,10 @@ fn parse_header(header: &[u8]) -> String {
 
 /// Parse an `addr` message, return new peers
 fn parse_addr_response(payload: &mut Vec<u8>, peer_ip: IpAddr, peer_port: u16) -> Vec<Peer> {
+    if payload.len() == 0 {
+        return vec![];
+    }
+
     let mut new_peers: Vec<Peer> = Vec::new();
 
     // each element from addr is 30 bytes long
