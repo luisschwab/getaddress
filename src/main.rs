@@ -667,23 +667,21 @@ fn pad_vector(data: Vec<u8>, total_size: usize) -> Vec<u8> {
 fn decode_compact_size(buffer: &mut Vec<u8>) -> usize {
     let first = buffer.remove(0);
     match first {
-        0..0xFD => first as usize,
-        0xFD => (((buffer.remove(0) as u64) << 8) | (buffer.remove(0) as u64)) as usize,
+        0..=0xFC => first as usize,
+        0xFD => {
+            let bytes: [u8; 2] = [buffer.remove(0), buffer.remove(0)];
+            u16::from_le_bytes(bytes) as usize
+        }
         0xFE => {
-            (((buffer.remove(0) as u64) << 24)
-                | ((buffer.remove(0) as u64) << 16)
-                | ((buffer.remove(0) as u64) << 8)
-                | (buffer.remove(0) as u64)) as usize
+            let bytes: [u8; 4] = [buffer.remove(0), buffer.remove(0), buffer.remove(0), buffer.remove(0)];
+            u32::from_le_bytes(bytes) as usize
         }
         0xFF => {
-            (((buffer.remove(0) as u64) << 56)
-                | ((buffer.remove(0) as u64) << 48)
-                | ((buffer.remove(0) as u64) << 40)
-                | ((buffer.remove(0) as u64) << 32)
-                | ((buffer.remove(0) as u64) << 24)
-                | ((buffer.remove(0) as u64) << 16)
-                | ((buffer.remove(0) as u64) << 8)
-                | (buffer.remove(0) as u64)) as usize
+            let bytes: [u8; 8] = [
+                buffer.remove(0), buffer.remove(0), buffer.remove(0), buffer.remove(0),
+                buffer.remove(0), buffer.remove(0), buffer.remove(0), buffer.remove(0),
+            ];
+            u64::from_le_bytes(bytes) as usize
         }
     }
 }
