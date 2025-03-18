@@ -1,12 +1,15 @@
 //! Utility functions
 
 use std::error::Error;
+use std::fmt::Arguments;
 use std::fs;
 use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use log::{error, info};
+use fern::colors::{Color, ColoredLevelConfig};
+use fern::FormatCallback;
+use log::{error, info, Record};
 use maxminddb::Reader;
 use sha2::{Digest, Sha256};
 
@@ -125,4 +128,40 @@ pub fn pad_vector(data: Vec<u8>, total_size: usize) -> Vec<u8> {
     let mut padded = data.clone();
     padded.resize(total_size, 0);
     padded
+}
+
+pub fn setup_logger(debug: bool) -> Result<(), fern::InitError> {
+    let colors = ColoredLevelConfig::new()
+        .error(Color::Red)
+        .warn(Color::Yellow)
+        .info(Color::Green)
+        .debug(Color::Blue);
+
+    let formatter = |use_colors: bool| {
+        move |out: FormatCallback, message: &Arguments, record: &Record| {
+            out.finish(format_args!(
+                "[{} {} {}] {}",
+                chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
+                match use_colors {
+                    true => colors.color(record.level()).to_string(),
+                    false => record.level().to_string(),
+                },
+                record.target(),
+                message
+            ))
+        }
+    };
+
+    let mut dispatchers = fern::Dispatch::new();
+    let stdout_dispatcher = fern::Dispatch::new()
+        .level_for("maxminddb", log::LevelFilter::Warn)
+        .format(formatter(true))
+        .level(if debug { log::LevelFilter::Debug } else { log::LevelFilter::Info })
+        .chain(std::io::stdout());
+
+    dispatchers = dispatchers.chain(stdout_dispatcher);
+
+    dispatchers.apply()?;
+
+    Ok(())
 }

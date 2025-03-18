@@ -1,12 +1,12 @@
 //! getaddress
+//!
 //! Builds a list of reachable Bitcoin nodes by impersonating
-//! one and sending `getaddr` messages to known nodes.
+//! one and recursively sending `getaddr` messages to other known nodes.
 
 #![allow(unused_parens)]
 #![allow(clippy::redundant_field_names)]
 
 use std::collections::HashMap;
-use std::fmt::Arguments;
 use std::io::Write;
 use std::net::{IpAddr, SocketAddr, TcpStream};
 use std::path::Path;
@@ -18,15 +18,13 @@ use std::time::{Duration, Instant};
 use clap::builder::PossibleValuesParser;
 use clap::{command, Parser};
 use dns_lookup::lookup_host;
-use fern::colors::{Color, ColoredLevelConfig};
-use fern::FormatCallback;
-use log::{debug, error, info, warn, Record};
+use log::{debug, error, info, warn};
 use rand::Rng;
 use rayon::ThreadPoolBuilder;
 use tokio::sync::broadcast;
 
 use network::{handshake, make_packet, parse_addr_response, read_message, Peer, REQUEST_TIMEOUT};
-use util::{dump_to_file, fill_asn};
+use util::{dump_to_file, fill_asn, setup_logger};
 
 mod network;
 mod util;
@@ -348,40 +346,4 @@ fn get_address(peer_ip: IpAddr, peer_port: u16, network_magic: &[u8], peers: Arc
             }
         }
     }
-}
-
-fn setup_logger(debug: bool) -> Result<(), fern::InitError> {
-    let colors = ColoredLevelConfig::new()
-        .error(Color::Red)
-        .warn(Color::Yellow)
-        .info(Color::Green)
-        .debug(Color::Blue);
-
-    let formatter = |use_colors: bool| {
-        move |out: FormatCallback, message: &Arguments, record: &Record| {
-            out.finish(format_args!(
-                "[{} {} {}] {}",
-                chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
-                match use_colors {
-                    true => colors.color(record.level()).to_string(),
-                    false => record.level().to_string(),
-                },
-                record.target(),
-                message
-            ))
-        }
-    };
-
-    let mut dispatchers = fern::Dispatch::new();
-    let stdout_dispatcher = fern::Dispatch::new()
-        .level_for("maxminddb", log::LevelFilter::Warn)
-        .format(formatter(true))
-        .level(if debug { log::LevelFilter::Debug } else { log::LevelFilter::Info })
-        .chain(std::io::stdout());
-
-    dispatchers = dispatchers.chain(stdout_dispatcher);
-
-    dispatchers.apply()?;
-
-    Ok(())
 }
