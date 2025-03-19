@@ -12,65 +12,94 @@ Usage
 
 ```
 ~$ cargo run -- --net testnet4
-[2024-10-24 21:07:05 INFO getaddress] starting handshake with 203.132.94.196:48333
-[2024-10-24 21:07:05 INFO getaddress] starting handshake with 85.208.69.71:48333
-[2024-10-24 21:07:05 INFO getaddress] successful handshake with 203.132.94.196:48333
-[2024-10-24 21:07:05 INFO getaddress] new peer discovered @ 203.132.94.196:48333
-[2024-10-24 21:07:05 INFO getaddress] successful handshake with 85.208.69.71:48333
-[2024-10-24 21:07:05 INFO getaddress] new peer discovered @ 85.208.69.71:48333
-[2024-10-24 21:07:05 INFO getaddress] 51 non-unique peers in the db
-[2024-10-24 21:07:06 INFO getaddress] starting handshake with 103.99.171.211:48333
-[2024-10-24 21:07:06 INFO getaddress] successful handshake with 103.99.171.211:48333
-[2024-10-24 21:07:06 INFO getaddress] new peer discovered @ 103.99.171.211:48333
-[2024-10-24 21:07:06 INFO getaddress] 52 non-unique peers in the db
-[2024-10-24 21:07:15 INFO getaddress] starting handshake with 176.112.177.138:48333
-[2024-10-24 21:07:15 INFO getaddress] successful handshake with 176.112.177.138:48333
-[2024-10-24 21:07:15 INFO getaddress] new peer discovered @ 176.112.177.138:48333
-[2024-10-24 21:07:16 INFO getaddress] starting handshake with 103.165.192.214:48333
-[2024-10-24 21:07:17 INFO getaddress] successful handshake with 103.165.192.214:48333
-[2024-10-24 21:07:17 INFO getaddress] new peer discovered @ 103.165.192.214:48333
-^C[2024-10-24 21:07:19 INFO getaddress] received SIGINT. shutting down, this may take a while...
-[2024-10-24 21:07:19 INFO getaddress] starting handshake with 2001:df6:7280::92:207:48333
-[2024-10-24 21:07:19 INFO getaddress] successful handshake with [2001:df6:7280::92:207]:48333
-[2024-10-24 21:07:19 INFO getaddress] new peer discovered @ [2001:df6:7280::92:207]:48333
-[2024-10-24 21:07:19 INFO getaddress] 55 non-unique peers in the db
-[2024-10-24 21:07:21 INFO getaddress] deduped peers list: from 55 to 44 peers
-[2024-10-24 21:07:21 INFO getaddress] discovered unique 44 peers in 00h01m12s
-[2024-10-24 21:07:21 INFO getaddress] looking up peer's ASNs...
-[2024-10-24 21:07:21 INFO getaddress] peers ASNs filled!
-[2024-10-24 21:07:21 INFO getaddress] 44 peers written to "output/testnet4/testnet4-20241024210608.txt"
-[2024-10-24 21:07:21 INFO getaddress] done!
+[2025-03-18 21:59:57 INFO getaddress::network] found 34 potential seed nodes, making handshakes...
+[2025-03-18 21:59:57 INFO getaddress::network] [thread 0] starting handshake with 103.99.168.208:48333
+[2025-03-18 21:59:57 INFO getaddress::network] [thread 0] successful handshake with 103.99.168.208:48333
+[2025-03-18 21:59:57 INFO getaddress::network] [thread 0] starting handshake with 209.146.50.202:48333
+[2025-03-18 21:59:57 INFO getaddress::network] [thread 0] successful handshake with 209.146.50.202:48333
+[2025-03-18 21:59:58 INFO getaddress::network] [thread 0] starting handshake with 77.247.127.71:48333
+[2025-03-18 21:59:58 INFO getaddress::network] [thread 0] successful handshake with 77.247.127.71:48333
+[2025-03-18 21:59:58 INFO getaddress::network] [thread 0] starting handshake with 199.119.138.36:48333
+[2025-03-18 21:59:58 INFO getaddress::network] [thread 0] successful handshake with 199.119.138.36:48333
+[2025-03-18 21:59:58 INFO getaddress::network] [thread 0] starting handshake with 80.253.94.252:48333
+[2025-03-18 22:00:02 INFO getaddress::network] successful handshakes with 10 seed nodes
+[2025-03-18 22:00:02 INFO getaddress] using 10 peers from seed nodes as bootstrap peers
+[2025-03-18 22:00:02 INFO getaddress] starting crawl from 10 bootstrap peers
+[2025-03-18 22:00:02 INFO getaddress] creating thread pool with 6 threads
+[2025-03-18 22:00:02 INFO getaddress::network] [thread 0] starting handshake with 45.41.204.28:48333
+...
+[2025-03-18 22:01:48 INFO getaddress] discovered 29 unique peers in 00:01:51
+[2025-03-18 22:01:49 INFO getaddress::network] [thread 1] starting handshake with 103.99.168.209:48333
+[2025-03-18 22:01:49 INFO getaddress::network] [thread 5] starting handshake with 209.146.50.202:48333
+[2025-03-18 22:01:49 INFO getaddress::network] [thread 1] successful handshake with 103.99.168.209:48333
+[2025-03-18 22:01:49 INFO getaddress::network] [thread 5] successful handshake with 209.146.50.202:48333
+[2025-03-18 22:01:52 INFO getaddress::network] [thread 0] starting handshake with 209.146.51.204:48333
+[2025-03-18 22:01:53 INFO getaddress::network] [thread 0] successful handshake with 209.146.51.204:48333
+[2025-03-18 22:01:53 INFO getaddress] discovered 30 unique peers in 00:01:56
+[2025-03-18 22:01:53 INFO getaddress::network] [thread 2] starting handshake with 103.99.171.209:48333
+[2025-03-18 22:01:53 INFO getaddress::network] [thread 2] successful handshake with 103.99.171.209:48333
+[2025-03-18 22:01:55 INFO getaddress] discovered 31 unique peers in 00:01:58
+[2025-03-18 22:01:55 INFO getaddress::network] [thread 1] starting handshake with 103.99.168.209:48333
+[2025-03-18 22:01:55 INFO getaddress::network] [thread 1] successful handshake with 103.99.168.209:48333
+^C[2025-03-18 22:02:01 INFO getaddress] Received SIGINT: shutting down, this may take a while...
+[2025-03-18 22:02:03 INFO getaddress] discovered 32 unique peers in 00:02:05
+[2025-03-18 22:02:03 INFO getaddress::util] filling up peer ASNs
+[2025-03-18 22:02:03 INFO getaddress::util] peer ASNs filled
+[2025-03-18 22:02:03 INFO getaddress] AS node hosting stakes:
+[2025-03-18 22:02:03 INFO getaddress]  AS142052 Mempool Space K.K.: 7 (21.88%)
+[2025-03-18 22:02:03 INFO getaddress]  AS54415 WIZ K.K.: 6 (18.75%)
+[2025-03-18 22:02:03 INFO getaddress]  AS174 COGENT-174: 4 (12.50%)
+[2025-03-18 22:02:03 INFO getaddress]  AS16276 OVH SAS: 4 (12.50%)
+[2025-03-18 22:02:03 INFO getaddress]  AS24940 Hetzner Online GmbH: 3 (9.38%)
+[2025-03-18 22:02:03 INFO getaddress]  AS51167 Contabo GmbH: 2 (6.25%)
+[2025-03-18 22:02:03 INFO getaddress]  AS400810 BREEZETECH: 2 (6.25%)
+[2025-03-18 22:02:03 INFO getaddress]  AS49505 JSC Selectel: 2 (6.25%)
+[2025-03-18 22:02:03 INFO getaddress]  AS0 NO DATA: 2 (6.25%)
+[2025-03-18 22:02:03 INFO getaddress]  AS63949 Akamai Connected Cloud: 2 (6.25%)
+[2025-03-18 22:02:03 INFO getaddress]  AS833 SWN-AS: 2 (6.25%)
+[2025-03-18 22:02:03 INFO getaddress]  AS212477 RoyaleHosting BV: 2 (6.25%)
+[2025-03-18 22:02:03 INFO getaddress]  AS20278 NEXEON: 2 (6.25%)
+[2025-03-18 22:02:03 INFO getaddress]  AS216382 Layer Marketing Services L.L.C: 2 (6.25%)
+[2025-03-18 22:02:03 INFO getaddress]  AS197540 netcup GmbH: 2 (6.25%)
+[2025-03-18 22:02:03 INFO getaddress]  AS18450 WEBNX: 2 (6.25%)
+[2025-03-18 22:02:03 INFO getaddress]  AS32489 AMANAHA-NEW: 2 (6.25%)
+[2025-03-18 22:02:03 INFO getaddress]  AS16509 AMAZON-02: 2 (6.25%)
+[2025-03-18 22:02:03 INFO getaddress] 32 peers written to "output/testnet4/testnet4-20250318215957.txt"
+[2025-03-18 22:02:03 INFO getaddress] done!
 
-~$ cat output/testnet4/testnet4-2024102421021.txt
-2.59.134.244:48333 / AS58212 / dataforest GmbH
-18.189.156.102:48333 / AS16509 / AMAZON-02
-45.142.17.140:48333 / AS206238 / Freedom Internet BV
-50.126.96.22:48333 / AS20055 / AS-WHOLESAIL
-89.117.52.73:48333 / AS51167 / Contabo GmbH
-103.99.168.203:48333 / AS54415 / WIZ K.K.
-103.99.168.204:48333 / AS54415 / WIZ K.K.
-103.99.168.205:48333 / AS54415 / WIZ K.K.
-103.99.168.207:48333 / AS54415 / WIZ K.K.
-103.99.168.210:48333 / AS54415 / WIZ K.K.
+~$ cat output/testnet4/testnet4-20250318215957.txt
+3.250.145.197:48333 / AS16509 / AMAZON-02
+5.182.4.106:48333 / AS49505 / JSC Selectel
+37.187.149.92:48333 / AS16276 / OVH SAS
+45.94.168.5:48333 / AS400810 / BREEZETECH
+51.81.245.218:48333 / AS16276 / OVH SAS
+57.128.176.163:48333 / AS16276 / OVH SAS
+77.247.127.71:48333
+89.117.50.252:48333 / AS51167 / Contabo GmbH
+95.217.106.33:48333 / AS24940 / Hetzner Online GmbH
+103.99.168.209:48333 / AS54415 / WIZ K.K.
 103.99.168.212:48333 / AS54415 / WIZ K.K.
 103.99.168.214:48333 / AS54415 / WIZ K.K.
-103.99.171.204:48333 / AS54415 / WIZ K.K.
-103.99.171.207:48333 / AS54415 / WIZ K.K.
-103.99.171.208:48333 / AS54415 / WIZ K.K.
-103.99.171.209:48333 / AS54415 / WIZ K.K.
-103.99.171.212:48333 / AS54415 / WIZ K.K.
-103.99.171.213:48333 / AS54415 / WIZ K.K.
-103.99.171.214:48333 / AS54415 / WIZ K.K.
+103.99.169.201:48333 / AS54415 / WIZ K.K.
+103.99.171.205:48333 / AS54415 / WIZ K.K.
 103.165.192.202:48333 / AS142052 / Mempool Space K.K.
-103.165.192.207:48333 / AS142052 / Mempool Space K.K.
-148.51.196.40:48333 / AS12025 / IMDC-AS12025
-186.233.184.40:48333 / AS262287 / Latitude.sh LTDA
-2001:df6:7280::92:204:48333 / AS142052 / Mempool Space K.K.
-2001:df6:7280::92:208:48333 / AS142052 / Mempool Space K.K.
-2001:df6:7280::92:211:48333 / AS142052 / Mempool Space K.K.
-2001:df6:7280::92:212:48333 / AS142052 / Mempool Space K.K.
-2401:b140:2::92:202:48333 / AS54415 / WIZ K.K.
-...
+103.165.192.203:48333 / AS142052 / Mempool Space K.K.
+103.165.192.204:48333 / AS142052 / Mempool Space K.K.
+103.165.192.205:48333 / AS142052 / Mempool Space K.K.
+103.165.192.208:48333 / AS142052 / Mempool Space K.K.
+103.165.192.211:48333 / AS142052 / Mempool Space K.K.
+104.237.131.138:48333 / AS63949 / Akamai Connected Cloud
+107.175.40.61:48333 / AS20278 / NEXEON
+108.171.193.104:48333 / AS18450 / WEBNX
+138.199.156.168:48333 / AS24940 / Hetzner Online GmbH
+165.140.203.156:48333 / AS833 / SWN-AS
+172.93.167.89:48333 / AS32489 / AMANAHA-NEW
+185.198.234.15:48333 / AS212477 / RoyaleHosting BV
+185.232.70.226:48333 / AS197540 / netcup GmbH
+199.119.138.36:48333 / AS216382 / Layer Marketing Services L.L.C
+209.146.50.202:48333 / AS174 / COGENT-174
+209.146.51.203:48333 / AS174 / COGENT-174
+209.146.51.204:48333 / AS174 / COGENT-174
 ```
 
 Sequence Diagram
