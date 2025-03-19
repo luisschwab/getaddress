@@ -5,14 +5,16 @@ use std::io::{Read, Write};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, TcpStream};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use dns_lookup::lookup_host;
 use log::{debug, error, info};
+use rand::seq::SliceRandom;
 
 use crate::util::{decode_compact_size, hash256, pad_vector};
 
-pub const REQUEST_TIMEOUT: u64 = 3; // seconds
+pub const REQUEST_TIMEOUT: u64 = 2; // seconds
 const PROTOCOL_VERSION: u32 = 70013;
 
-#[derive(Debug, Hash, Eq, PartialEq, PartialOrd, Ord)]
+#[derive(Clone, Debug, Hash, Eq, PartialEq, PartialOrd, Ord)]
 pub struct Peer {
     pub ip: IpAddr,
     pub port: u16,
@@ -20,15 +22,89 @@ pub struct Peer {
     pub org: Option<String>,
 }
 
+/// Query DNS seeds for potential peers
+pub fn query_dns_seeds(dns_seeds: &[&str], port: u16, network_magic: &[u8]) -> Result<Vec<Peer>, Box<dyn std::error::Error>> {
+    const N_PEERS: usize = 10;
+    const N_SEEDERS: usize = 3;
+
+    let mut rng = rand::thread_rng();
+    let mut seed_candidates = Vec::new();
+    let mut validated_peers = Vec::new();
+
+    for &dns_seeder in dns_seeds.iter().take(N_SEEDERS) {
+        match lookup_host(dns_seeder) {
+            Ok(seeds) => {
+                for seed in seeds {
+                    seed_candidates.push((seed, port));
+                }
+
+                if seed_candidates.len() >= 20 {
+                    break;
+                }
+            }
+            Err(e) => {
+                debug!("failed to resolve DNS seed {}: {}", dns_seeder, e);
+            }
+        }
+    }
+
+    if seed_candidates.is_empty() {
+        return Err("failed to resolve any DNS seeds".into());
+    }
+
+    info!("found {} potential seed nodes, making handshakes...", seed_candidates.len());
+
+    seed_candidates.shuffle(&mut rng);
+
+    let mut successful = 0;
+    for (ip, port) in seed_candidates {
+        match TcpStream::connect_timeout(&(ip, port).into(), Duration::from_secs(REQUEST_TIMEOUT)) {
+            Ok(mut stream) => match handshake(&mut stream, network_magic, 0 /* thread_id */) {
+                Ok(true) => {
+                    validated_peers.push(Peer {
+                        ip,
+                        port,
+                        asn: None,
+                        org: None,
+                    });
+
+                    successful += 1;
+                    if successful >= N_PEERS {
+                        // `N_PEERS` is enough to bootstrap the process
+                        break;
+                    }
+                }
+                Ok(false) => {
+                    debug!("handshake failed with seed node {}:{}", ip, port);
+                }
+                Err(e) => {
+                    debug!("error during handshake with seed node {}:{}: {}", ip, port, e);
+                }
+            },
+            Err(e) => {
+                debug!("failed to connect to seed node {}:{}: {}", ip, port, e);
+            }
+        }
+    }
+
+    if validated_peers.is_empty() {
+        return Err("failed to connect to any seed nodes".into());
+    }
+
+    info!("successful handshakes with {} seed nodes", validated_peers.len());
+
+    Ok(validated_peers)
+}
+
 /// Perform a handshake, return success status
-pub fn handshake(stream: &mut TcpStream, network_magic: &[u8]) -> Result<bool, Box<dyn Error>> {
+pub fn handshake(stream: &mut TcpStream, network_magic: &[u8], thread_id: usize) -> Result<bool, Box<dyn Error>> {
     let addr = stream.peer_addr()?;
     let peer_ip = addr.ip();
     let peer_port = addr.port();
 
     match peer_ip {
-        IpAddr::V4(_) => info!("starting handshake with {}:{}", peer_ip, peer_port),
-        IpAddr::V6(_) => info!("starting handshake with [{}]:{}", peer_ip, peer_port),
+        IpAddr::V4(_) => info!("[thread {}] starting handshake with {}:{}", thread_id, peer_ip, peer_port),
+        IpAddr::V6(_) => info!("[thread {}] starting handshake with [{}]:{}", thread_id, peer_ip, peer_port),
     }
 
     // Set read and write timeouts
@@ -77,8 +153,8 @@ pub fn handshake(stream: &mut TcpStream, network_magic: &[u8]) -> Result<bool, B
     debug!("sent verack to {}:{}", peer_ip, peer_port);
 
     match peer_ip {
-        IpAddr::V4(_) => info!("successful handshake with {}:{}", peer_ip, peer_port),
-        IpAddr::V6(_) => info!("successful handshake with [{}]:{}", peer_ip, peer_port),
+        IpAddr::V4(_) => info!("[thread {}] successful handshake with {}:{}", thread_id, peer_ip, peer_port),
+        IpAddr::V6(_) => info!("[thread {}] successful handshake with [{}]:{}", thread_id, peer_ip, peer_port),
     }
 
     Ok(true)
@@ -177,7 +253,7 @@ pub fn parse_header(header: &[u8]) -> String {
 
 /// Parse an `addr` message, return new peers
 pub fn parse_addr_response(payload: &mut Vec<u8>, peer_ip: IpAddr, peer_port: u16) -> Vec<Peer> {
-    if payload.len() == 0 {
+    if payload.is_empty() {
         return vec![];
     }
 
@@ -201,18 +277,18 @@ pub fn parse_addr_response(payload: &mut Vec<u8>, peer_ip: IpAddr, peer_port: u1
             IpAddr::V4(Ipv4Addr::new(ip[12], ip[13], ip[14], ip[15]))
         } else {
             IpAddr::V6(Ipv6Addr::new(
-                (ip[0] as u16) << 8 | (ip[1] as u16),
-                (ip[2] as u16) << 8 | (ip[3] as u16),
-                (ip[4] as u16) << 8 | (ip[5] as u16),
-                (ip[6] as u16) << 8 | (ip[7] as u16),
-                (ip[8] as u16) << 8 | (ip[9] as u16),
-                (ip[10] as u16) << 8 | (ip[11] as u16),
-                (ip[12] as u16) << 8 | (ip[13] as u16),
-                (ip[14] as u16) << 8 | (ip[15] as u16),
+                ((ip[0] as u16) << 8) | (ip[1] as u16),
+                ((ip[2] as u16) << 8) | (ip[3] as u16),
+                ((ip[4] as u16) << 8) | (ip[5] as u16),
+                ((ip[6] as u16) << 8) | (ip[7] as u16),
+                ((ip[8] as u16) << 8) | (ip[9] as u16),
+                ((ip[10] as u16) << 8) | (ip[11] as u16),
+                ((ip[12] as u16) << 8) | (ip[13] as u16),
+                ((ip[14] as u16) << 8) | (ip[15] as u16),
             ))
         };
 
-        let port = (port[0] as u16) << 8 | (port[1] as u16);
+        let port = ((port[0] as u16) << 8) | (port[1] as u16);
 
         let peer = Peer {
             ip: ip_addr,
@@ -227,7 +303,7 @@ pub fn parse_addr_response(payload: &mut Vec<u8>, peer_ip: IpAddr, peer_port: u1
     new_peers
 }
 
-/// Takes an IpAddr enum, return an IPv6 or IPv6-wrapped-IPv4 slice
+/// Takes an IpAddr enum, returns an IPv6 or IPv6-wrapped-IPv4 slice
 pub fn wrap_in_ipv6(ip: IpAddr) -> [u8; 16] {
     let mut bytes = [0u8; 16];
     match ip {

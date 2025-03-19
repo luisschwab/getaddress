@@ -6,7 +6,8 @@
 #![allow(unused_parens)]
 #![allow(clippy::redundant_field_names)]
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::error::Error;
 use std::io::Write;
 use std::net::{IpAddr, SocketAddr, TcpStream};
 use std::path::Path;
@@ -17,19 +18,15 @@ use std::time::{Duration, Instant};
 
 use clap::builder::PossibleValuesParser;
 use clap::{command, Parser};
-use dns_lookup::lookup_host;
-use log::{debug, error, info, warn};
-use rand::Rng;
+use log::{debug, error, info};
 use rayon::ThreadPoolBuilder;
 use tokio::sync::broadcast;
 
-use network::{handshake, make_packet, parse_addr_response, read_message, Peer, REQUEST_TIMEOUT};
+use network::{handshake, make_packet, parse_addr_response, query_dns_seeds, read_message, Peer, REQUEST_TIMEOUT};
 use util::{dump_to_file, fill_asn, setup_logger};
 
 mod network;
 mod util;
-
-static RUNNING: AtomicBool = AtomicBool::new(true);
 
 const OUTPUT_DIR: &str = "output";
 
@@ -86,14 +83,27 @@ struct Args {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
-    let mut rng = rand::thread_rng();
+
+    // CTRL-C handler
+    let running = Arc::new(AtomicBool::new(true));
+    let (shutdown_tx, _) = broadcast::channel::<()>(1);
+    {
+        let shutdown_tx = shutdown_tx.clone();
+        let running_clone = Arc::clone(&running);
+
+        ctrlc::set_handler(move || {
+            info!("Received SIGINT: shutting down, this may take a while...");
+            running_clone.store(false, Ordering::SeqCst);
+            let _ = shutdown_tx.send(());
+        })?;
+    }
 
     setup_logger(args.debug).unwrap();
 
-    let network = &args.network;
     let timestamp = chrono::Local::now().format("%Y%m%d%H%M%S");
+
     #[rustfmt::skip]
-    let (network_magic, port, dns_seeds, filename) = match network.as_str() {
+    let (network_magic, port, dns_seeds, filename) = match args.network.as_str() {
         "mainnet" => (MAGIC_MAINNET, PORT_MAINNET, SEEDS_MAINNET, format!("mainnet-{}.txt", timestamp)),
         "testnet4" => (MAGIC_TESTNET, PORT_TESTNET, SEEDS_TESTNET, format!("testnet4-{}.txt", timestamp)),
         "signet" => (MAGIC_SIGNET, PORT_SIGNET, SEEDS_SIGNET, format!("signet-{}.txt", timestamp)),
@@ -101,108 +111,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         _ => (MAGIC_MAINNET, PORT_MAINNET, SEEDS_MAINNET, format!("mainnet-{}.txt", timestamp)),
     };
 
+    // capture current timestamp
     let t_0 = Instant::now();
-    let n_threads = std::cmp::max(1, num_cpus::get());
 
-    // Pick a random seed node from DNS seeder's record
-    let dns_seeder = dns_seeds[rng.gen_range(0..dns_seeds.len())];
-    let seeds = lookup_host(dns_seeder).expect("Failure on name resolution");
+    // populate `peers` with a few good peers from DNS seeds
+    let bootstrap_peers = query_dns_seeds(dns_seeds, port, network_magic)?;
+    info!("using {} peers from seed nodes as bootstrap peers", bootstrap_peers.len());
 
-    let mut peers: Vec<Peer> = Vec::new();
+    // "leave some for the rest of us!"
+    let n_threads = std::cmp::max(1, num_cpus::get() - 2);
 
-    for seed in seeds {
-        peers.push(Peer {
-            ip: seed,
-            port: port,
-            asn: None,
-            org: None,
-        });
-    }
-
-    let (shutdown_tx, _) = broadcast::channel(n_threads);
-
-    ctrlc::set_handler({
-        let shutdown_tx = shutdown_tx.clone();
-        move || {
-            info!("received SIGINT: shutting down, this may take a while...");
-            RUNNING.store(false, Ordering::SeqCst);
-            let _ = shutdown_tx.send(());
-        }
-    })?;
-
-    // run get_address on multiple threads
-    let peers = Arc::new(Mutex::new(peers));
-    let pool = ThreadPoolBuilder::new().num_threads(n_threads).build().unwrap();
-
-    pool.scope(|s| {
-        while RUNNING.load(Ordering::SeqCst) {
-            let peers_clone = Arc::clone(&peers);
-
-            let mut shutdown_rx = shutdown_tx.subscribe();
-
-            s.spawn(move |_| {
-                let mut rng = rand::thread_rng();
-
-                while RUNNING.load(Ordering::SeqCst) {
-                    // try to receive shutdown signal
-                    if shutdown_rx.try_recv().is_ok() {
-                        return;
-                    }
-
-                    let peer = {
-                        let peers_guard = peers_clone.lock().unwrap();
-                        if peers_guard.is_empty() {
-                            break;
-                        }
-                        let peer = &peers_guard[rng.gen_range(0..peers_guard.len())];
-                        (peer.ip, peer.port)
-                    };
-
-                    if !RUNNING.load(Ordering::SeqCst) {
-                        return;
-                    }
-
-                    get_address(peer.0, peer.1, network_magic, peers_clone.clone());
-                }
-            });
-
-            // throttle task spawning
-            std::thread::sleep(Duration::from_millis(100));
-        }
-    });
-
-    let mut peers = match Arc::try_unwrap(peers) {
-        Ok(mutex) => match mutex.into_inner() {
-            Ok(peers) => peers,
-            Err(e) => {
-                error!("failed to unwrap peer's vector mutex: {}", e);
-                std::process::exit(-1);
-            }
-        },
-        Err(e) => {
-            error!("failed to unwrap Arc: arc still has {} strong references", Arc::strong_count(&e));
-            std::process::exit(-1);
-        }
-    };
-
-    info!("deduping peer list...");
-    let peers_len_before = peers.len();
+    let mut peers = crawl(bootstrap_peers, n_threads, network_magic, running, shutdown_tx, t_0)?;
     peers.sort();
     peers.dedup();
-    let peers_len_after = peers.len();
-    info!("deduped peer list: from {} to {} peers", peers_len_before, peers_len_after);
 
     let delta = t_0.elapsed().as_secs();
-    let hour = delta / 3600;
-    let minute = (delta % 3600) / 60;
-    let second = delta % 60;
-
     info!(
-        "discovered {} unique peers in {:02}h{:02}m{:02}s",
+        "discovered {} unique peers in {:02}:{:02}:{:02}",
         peers.len(),
-        hour,
-        minute,
-        second
+        (delta / 3600),      // hours
+        (delta % 3600) / 60, // minutes
+        (delta % 60)         // seconds
     );
 
     if args.query_asn {
@@ -212,11 +141,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut asn_nodes: HashMap<String, u32> = HashMap::new();
 
         for peer in &peers {
-            let key = String::from(format!(
-                "AS{} {}",
-                peer.asn.unwrap_or(0),
-                peer.org.clone().unwrap_or("NO DATA".to_string())
-            ));
+            let key = format!("AS{} {}", peer.asn.unwrap_or(0), peer.org.clone().unwrap_or("NO DATA".to_string()));
             *asn_nodes.entry(key).or_insert(1) += 1;
         }
 
@@ -224,25 +149,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         sorted_asn_nodes.sort_by(|a, b| b.1.cmp(&a.1));
 
         info!("AS node hosting stakes:");
-
-        let mut i = 0;
-        let mut accumulated = 0.0;
         for (k, v) in sorted_asn_nodes {
             let stake = (100.0 * v as f64 / peers.len() as f64);
-            accumulated += stake;
-
-            info!("{}: {} ({:.2}%)", k, v, stake);
-
-            if i >= 25 || accumulated > 80.0 {
-                info!("OTHERS: ({:.2}%)", 100.0 - accumulated);
-
-                break;
-            }
-            i += 1;
+            info!(" {}: {} ({:.2}%)", k, v, stake);
         }
     }
 
-    let path = Path::new(OUTPUT_DIR).join(network);
+    let path = Path::new(OUTPUT_DIR).join(args.network);
     match dump_to_file(&path, &filename, &peers) {
         Ok(_) => info!("{} peers written to {:?}", peers.len(), path.join(filename)),
         Err(e) => error!("failed to write peers to {:?}: {}", path, e),
@@ -253,97 +166,251 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn get_address(peer_ip: IpAddr, peer_port: u16, network_magic: &[u8], peers: Arc<Mutex<Vec<Peer>>>) {
-    if !RUNNING.load(Ordering::SeqCst) {
-        return;
-    }
+fn crawl(
+    bootstrap_peers: Vec<Peer>,
+    n_threads: usize,
+    network_magic: &[u8],
+    running: Arc<AtomicBool>,
+    shutdown_tx: broadcast::Sender<()>,
+    t_0: Instant,
+) -> Result<Vec<Peer>, Box<dyn std::error::Error>> {
+    info!("starting crawl from {} bootstrap peers", bootstrap_peers.len());
 
-    let socket_addr = SocketAddr::new(peer_ip, peer_port);
-    match TcpStream::connect_timeout(&socket_addr, Duration::from_secs(REQUEST_TIMEOUT)) {
-        Err(e) => warn!("failed to connect to {}:{}: {}", socket_addr.ip(), socket_addr.port(), e),
-        Ok(mut stream) => {
-            // catch SIGINT
-            if !RUNNING.load(Ordering::Relaxed) {
-                return;
+    // threads will pull jobs from this queue
+    let work_queue = Arc::new(Mutex::new(
+        bootstrap_peers.into_iter().map(|p| (p.ip, p.port)).collect::<HashSet<_>>(),
+    ));
+    let running_clone = Arc::clone(&running);
+
+    let discovered_peers = Arc::new(Mutex::new(HashSet::new()));
+    let discovered_peers_log = Arc::clone(&discovered_peers);
+
+    // dedicated logging thread
+    let mut log_shutdown_rx = shutdown_tx.subscribe();
+    let _logging_handle = std::thread::spawn(move || {
+        let mut last_count = 0; // Track the previous count
+
+        while running_clone.load(Ordering::SeqCst) {
+            if log_shutdown_rx.try_recv().is_ok() {
+                break;
             }
 
-            // Set read and write timeouts
-            if let Err(e) = stream.set_read_timeout(Some(Duration::from_secs(REQUEST_TIMEOUT))) {
-                error!("failed to set read timeout: {}", e);
-                return;
-            }
-            if let Err(e) = stream.set_write_timeout(Some(Duration::from_secs(REQUEST_TIMEOUT))) {
-                error!("failed to set write timeout: {}", e);
-                return;
-            }
+            // "how you can tap, go sleep, go sleep"
+            std::thread::sleep(Duration::from_millis(500));
 
-            match handshake(&mut stream, network_magic) {
-                Err(e) => warn!("an error occurred while making the handshake: {}", e),
-                Ok(false) => (),
-                Ok(true) => {
-                    let send_getaddr = make_packet("getaddr", None, network_magic);
-                    match stream.write_all(&send_getaddr) {
-                        Ok(_) => debug!("sent getaddr to {}:{}", peer_ip, peer_port),
-                        Err(e) => {
-                            warn!("failed to send getaddr to {}:{}: {}", peer_ip, peer_port, e);
-                            return;
+            let discovered_clone = Arc::clone(&discovered_peers_log);
+            let discovered_count = discovered_clone.lock().unwrap().len();
+
+            if discovered_count > last_count {
+                let delta = t_0.elapsed().as_secs();
+                info!(
+                    "discovered {} unique peers in {:02}:{:02}:{:02}",
+                    discovered_count,
+                    (delta / 3600),      // hours
+                    (delta % 3600) / 60, // minutes
+                    (delta % 60)         // seconds
+                );
+                last_count = discovered_count;
+            }
+        }
+    });
+
+    // worker threads
+    info!("creating thread pool with {} threads", n_threads);
+    let pool = ThreadPoolBuilder::new().num_threads(n_threads).build()?;
+    pool.scope(|s| {
+        for thread_id in 0..n_threads {
+            let work_queue = Arc::clone(&work_queue);
+            let discovered_peers = Arc::clone(&discovered_peers);
+            let running = Arc::clone(&running);
+            let mut worker_shutdown_rx = shutdown_tx.subscribe();
+
+            s.spawn(move |_| {
+                let mut local_discoveries = HashSet::new();
+
+                'worker: while running.load(Ordering::SeqCst) {
+                    // catch CTRL-C
+                    if worker_shutdown_rx.try_recv().is_ok() {
+                        break 'worker;
+                    }
+
+                    // fetch job from from the work queue
+                    let target = {
+                        let mut queue = work_queue.lock().unwrap();
+
+                        if queue.is_empty() {
+                            info!("empty work queue, thread {} exiting", thread_id);
+                            break 'worker;
+                        }
+
+                        let peer = *queue.iter().next().unwrap();
+                        queue.remove(&peer);
+                        peer
+                    };
+
+                    // getaddress
+                    let new_peers = match get_address(target.0, target.1, network_magic, thread_id, &running) {
+                        Ok(peers) => peers,
+                        Err(_) => continue,
+                    };
+
+                    // add validated peers to `discovered_peers`
+                    {
+                        let mut peers = discovered_peers.lock().unwrap();
+                        for peer in &new_peers {
+                            // Convert Peer to the tuple that discovered_peers stores
+                            let peer_tuple = (peer.ip, peer.port);
+                            peers.insert(peer_tuple);
                         }
                     }
 
-                    let mut recv_command = "";
-                    while recv_command != "addr" {
-                        // catch SIGINT
-                        if !RUNNING.load(Ordering::Relaxed) {
-                            return;
+                    // process new peers
+                    let peer_count = new_peers.len();
+                    if peer_count > 0 {
+                        let mut work_to_add = Vec::new();
+
+                        for peer in &new_peers {
+                            let peer_tuple = (peer.ip, peer.port);
+
+                            // skip if we've already seen this peer on this thread
+                            local_discoveries.insert(peer_tuple);
+
+                            work_to_add.push(peer_tuple);
                         }
-                        match read_message(&mut stream) {
-                            Ok((command, mut payload)) => {
-                                if command == "addr" {
-                                    recv_command = "addr";
-                                    debug!("received {} from {}:{}", command, peer_ip, peer_port);
-                                    let new_peers = parse_addr_response(&mut payload, peer_ip, peer_port);
 
-                                    for peer in new_peers {
-                                        // catch SIGINT
-                                        if !RUNNING.load(Ordering::Relaxed) {
-                                            return;
-                                        }
-
-                                        // only add new peers if they are responsive (make a successful handshake)
-                                        let socket_addr = SocketAddr::new(peer.ip, peer.port);
-                                        match TcpStream::connect_timeout(&socket_addr, Duration::from_secs(REQUEST_TIMEOUT)) {
-                                            Ok(mut stream) => {
-                                                if let Ok(true) = handshake(&mut stream, network_magic) {
-                                                    if let Ok(mut peers_guard) = peers.lock() {
-                                                        match peer.ip {
-                                                            IpAddr::V4(ip) => {
-                                                                info!("new peer discovered @ {}:{}", ip, peer.port)
-                                                            }
-                                                            IpAddr::V6(ip) => {
-                                                                info!("new peer discovered @ [{}]:{}", ip, peer.port)
-                                                            }
-                                                        }
-                                                        peers_guard.push(peer);
-
-                                                        if (peers_guard.len() % 5 == 0) {
-                                                            info!("{} non-unique peers in the db", peers_guard.len());
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                            _ => continue,
-                                        }
-                                    }
+                        if !work_to_add.is_empty() {
+                            {
+                                let mut peers = discovered_peers.lock().unwrap();
+                                for peer in &work_to_add {
+                                    peers.insert(*peer);
                                 }
                             }
-                            Err(e) => {
-                                warn!("error reading message from {}:{}: {}", peer_ip, peer_port, e);
-                                return;
+
+                            {
+                                let mut queue = work_queue.lock().unwrap();
+                                for peer in &work_to_add {
+                                    queue.insert(*peer);
+                                }
                             }
                         }
                     }
                 }
+                debug!("thread {} is exiting worker loop", thread_id);
+            });
+        }
+    });
+
+    let peers_set = Arc::try_unwrap(discovered_peers)
+        .map_err(|_| "failed to unwrap Arc: still has references")?
+        .into_inner()?;
+
+    // convert peer set into Vec<Peer>
+    let peers: Vec<Peer> = peers_set
+        .into_iter()
+        .map(|(ip, port)| Peer {
+            ip,
+            port,
+            asn: None,
+            org: None,
+        })
+        .collect();
+
+    Ok(peers)
+}
+
+fn get_address(
+    peer_ip: IpAddr,
+    peer_port: u16,
+    network_magic: &[u8],
+    thread_id: usize,
+    running: &AtomicBool,
+) -> Result<Vec<Peer>, Box<dyn Error>> {
+    // capture CTRL-C
+    if !running.load(Ordering::SeqCst) {
+        return Ok(Vec::new());
+    }
+
+    let socket_addr = SocketAddr::new(peer_ip, peer_port);
+
+    // attempt TCP handshake
+    let mut stream = TcpStream::connect_timeout(&socket_addr, Duration::from_secs(REQUEST_TIMEOUT)).map_err(|e| {
+        debug!("failed to connect to {}:{}: {}", socket_addr.ip(), socket_addr.port(), e);
+        e
+    })?;
+
+    if !running.load(Ordering::Relaxed) {
+        return Ok(Vec::new());
+    }
+
+    // set r/w timeouts
+    stream.set_read_timeout(Some(Duration::from_secs(REQUEST_TIMEOUT))).map_err(|e| {
+        debug!("failed to set read timeout: {}", e);
+        e
+    })?;
+    stream.set_write_timeout(Some(Duration::from_secs(REQUEST_TIMEOUT))).map_err(|e| {
+        debug!("failed to set write timeout: {}", e);
+        e
+    })?;
+
+    // attempt bitcoin handshake
+    handshake(&mut stream, network_magic, thread_id)?;
+
+    // build and send `getaddr` message
+    let send_getaddr = make_packet("getaddr", None, network_magic);
+    stream.write_all(&send_getaddr).map_err(|e| {
+        debug!("failed to send getaddr to {}:{}: {}", peer_ip, peer_port, e);
+        e
+    })?;
+    debug!("sent getaddr to {}:{}", peer_ip, peer_port);
+
+    let mut validated_peers = Vec::new();
+    let mut recv_command = "";
+
+    while recv_command != "addr" {
+        // capture CTRL-C
+        if !running.load(Ordering::Relaxed) {
+            return Ok(validated_peers);
+        }
+
+        let (command, mut payload) = read_message(&mut stream).map_err(|e| {
+            debug!("error reading message from {}:{}: {}", peer_ip, peer_port, e);
+            e
+        })?;
+
+        if command == "addr" {
+            recv_command = "addr";
+            debug!("received {} from {}:{}", command, peer_ip, peer_port);
+
+            // parse `addr` response
+            let potential_peers = parse_addr_response(&mut payload, peer_ip, peer_port);
+
+            // validate receiver peers from `addr`
+            for peer in potential_peers {
+                // // capture CTRL-C
+                if !running.load(Ordering::Relaxed) {
+                    return Ok(validated_peers);
+                }
+
+                let socket_addr = SocketAddr::new(peer.ip, peer.port);
+                match TcpStream::connect_timeout(&socket_addr, Duration::from_secs(REQUEST_TIMEOUT)) {
+                    Ok(mut stream) => {
+                        if let Ok(true) = handshake(&mut stream, network_magic, thread_id) {
+                            match peer.ip {
+                                IpAddr::V4(ip) => {
+                                    debug!("new peer discovered @ {}:{}", ip, peer.port);
+                                }
+                                IpAddr::V6(ip) => {
+                                    debug!("new peer discovered @ [{}]:{}", ip, peer.port);
+                                }
+                            }
+                            validated_peers.push(peer);
+                        }
+                    }
+                    _ => continue,
+                }
             }
         }
     }
+
+    Ok(validated_peers)
 }

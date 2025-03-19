@@ -111,13 +111,13 @@ pub fn dump_to_file(path: &PathBuf, filename: &String, peers: &Vec<Peer>) -> Res
 
 /// Query GEOLITE_DB and try to fill ASN's and Org names based on IP address
 pub fn fill_asn(peers: &mut Vec<Peer>) {
-    info!("looking up peer's ASNs...");
+    info!("filling up peer ASNs");
 
     if let Ok(lookup_as) = LookupAS::new(GEOLITE_DB) {
         for peer in peers {
             let _ = lookup_as.lookup_peer(peer);
         }
-        info!("peer ASNs filled!");
+        info!("peer ASNs filled");
     } else {
         error!("error while reading {}, skipping ASN tagging", GEOLITE_DB);
     }
