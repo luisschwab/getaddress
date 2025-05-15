@@ -11,7 +11,7 @@ Usage
 ---
 
 ```
-~$ cargo run -- --net testnet4
+~$ just crawl testnet4
 [2025-03-18 21:59:57 INFO getaddress::network] found 34 potential seed nodes, making handshakes...
 [2025-03-18 21:59:57 INFO getaddress::network] [thread 0] starting handshake with 103.99.168.208:48333
 [2025-03-18 21:59:57 INFO getaddress::network] [thread 0] successful handshake with 103.99.168.208:48333

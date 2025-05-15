@@ -32,12 +32,12 @@ mod util;
 
 const OUTPUT_DIR: &str = "output";
 
-const PORT_MAINNET: u16 = 8333;
+const PORT_BITCOIN: u16 = 8333;
 const PORT_TESTNET: u16 = 48333;
 const PORT_SIGNET: u16 = 38333;
 const PORT_REGTEST: u16 = 18444;
 
-const SEEDS_MAINNET: &[&str] = &[
+const SEEDS_BITCOIN: &[&str] = &[
     "seed.bitcoin.luisschwab.com",
     "dnsseed.bitcoin.dashjr.org",
     "dnsseed.bluematt.me",
@@ -67,7 +67,7 @@ const SEEDS_TESTNET4: &[&str] = &[
 #[derive(Parser, Debug)]
 #[command(version, name="getaddress", about="getaddress\nA P2P crawler for all Bitcoin networks", long_about = None)]
 struct Args {
-    #[arg(long, alias="net", default_value_t=String::from("bitcoin"), help="Network to crawl", value_parser = PossibleValuesParser::new(["bitcoin", "signet", "testnet4", "regtest"]))]
+    #[arg(long, short, alias="network", default_value_t=String::from("bitcoin"), help="Network to crawl", value_parser = PossibleValuesParser::new(["bitcoin", "signet", "testnet4", "regtest"]))]
     network: String,
 
     #[rustfmt::skip]
@@ -101,11 +101,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     #[rustfmt::skip]
     let (network_magic, port, dns_seeds, filename) = match args.network.parse::<Network>()? {
-        Network::Bitcoin => (Magic::BITCOIN, PORT_MAINNET, SEEDS_MAINNET, format!("{}-{}.txt", Network::Bitcoin, timestamp)),
+        Network::Bitcoin => (Magic::BITCOIN, PORT_BITCOIN, SEEDS_BITCOIN, format!("{}-{}.txt", Network::Bitcoin, timestamp)),
         Network::Signet => (Magic::SIGNET, PORT_SIGNET, SEEDS_SIGNET, format!("{}-{}.txt", Network::Signet, timestamp)),
         Network::Testnet4 => (Magic::TESTNET4, PORT_TESTNET, SEEDS_TESTNET4, format!("{}-{}.txt", Network::Testnet4, timestamp)),
         Network::Regtest => (Magic::REGTEST, PORT_REGTEST, &["localhost"][..], format!("{}-{}.txt", Network::Regtest, timestamp)),
-        _ => (Magic::BITCOIN, PORT_MAINNET, SEEDS_MAINNET, format!("{}-{}.txt", Network::Bitcoin, timestamp)),
+        _ => (Magic::BITCOIN, PORT_BITCOIN, SEEDS_BITCOIN, format!("{}-{}.txt", Network::Bitcoin, timestamp)),
     };
 
     // capture current timestamp
