@@ -1,14 +1,18 @@
 //! Utility functions
 
-use std::fmt::Arguments;
-use std::fs;
-use std::fs::File;
-use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::{
+    fmt::Arguments,
+    fs,
+    fs::File,
+    io::Write,
+    path::{Path, PathBuf},
+};
 
 use anyhow::Result;
-use fern::colors::{Color, ColoredLevelConfig};
-use fern::FormatCallback;
+use fern::{
+    colors::{Color, ColoredLevelConfig},
+    FormatCallback,
+};
 use log::{error, info, Record};
 use maxminddb::Reader;
 use sha2::{Digest, Sha256};

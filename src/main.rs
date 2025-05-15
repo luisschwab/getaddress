@@ -6,25 +6,26 @@
 #![allow(unused_parens)]
 #![allow(clippy::redundant_field_names)]
 
-use std::collections::{HashMap, HashSet};
-use std::io::Write;
-use std::net::{IpAddr, SocketAddr, TcpStream};
-use std::path::Path;
-use std::str;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::{
+    collections::{HashMap, HashSet},
+    io::Write,
+    net::{IpAddr, SocketAddr, TcpStream},
+    path::Path,
+    str,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
+    time::{Duration, Instant},
+};
 
 use anyhow::Result;
-use bitcoin::network::Network;
-use bitcoin::p2p::Magic;
-use clap::builder::PossibleValuesParser;
-use clap::{command, Parser};
+use bitcoin::{network::Network, p2p::Magic};
+use clap::{builder::PossibleValuesParser, command, Parser};
 use log::{debug, error, info};
+use network::{handshake, make_packet, parse_addr_response, read_message, request_seeds, Peer, REQUEST_TIMEOUT};
 use rayon::ThreadPoolBuilder;
 use tokio::sync::broadcast;
-
-use network::{handshake, make_packet, parse_addr_response, read_message, request_seeds, Peer, REQUEST_TIMEOUT};
 use util::{dump_to_file, fill_asn, setup_logger};
 
 mod network;

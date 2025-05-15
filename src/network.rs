@@ -1,8 +1,10 @@
 //! Network related functions
 
-use std::io::{Read, Write};
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, TcpStream};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::{
+    io::{Read, Write},
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, TcpStream},
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use anyhow::Result;
 use bitcoin::p2p::Magic;
