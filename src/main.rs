@@ -16,6 +16,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use bitcoin::network::Network;
 use bitcoin::p2p::Magic;
 use clap::builder::PossibleValuesParser;
 use clap::{command, Parser};
@@ -53,20 +54,20 @@ const SEEDS_MAINNET: &[&str] = &[
     "seed.mainnet.achownodes.xyz",
 ];
 #[rustfmt::skip]
-const SEEDS_TESTNET: &[&str] = &[
-    "seed.testnet4.bitcoin.sprovoost.nl",
-    "seed.testnet4.wiz.biz"
-];
-#[rustfmt::skip]
 const SEEDS_SIGNET: &[&str] = &[
     "seed.signet.achownodes.xyz",
     "seed.signet.bitcoin.sprovoost.nl"
+];
+#[rustfmt::skip]
+const SEEDS_TESTNET4: &[&str] = &[
+    "seed.testnet4.bitcoin.sprovoost.nl",
+    "seed.testnet4.wiz.biz"
 ];
 
 #[derive(Parser, Debug)]
 #[command(version, name="getaddress", about="getaddress\nA P2P crawler for all Bitcoin networks", long_about = None)]
 struct Args {
-    #[arg(long, alias="net", default_value_t=("mainnet".to_string()), help="Network to crawl", value_parser = PossibleValuesParser::new(["mainnet", "testnet4", "signet", "regtest"]))]
+    #[arg(long, alias="net", default_value_t=String::from("bitcoin"), help="Network to crawl", value_parser = PossibleValuesParser::new(["bitcoin", "signet", "testnet4", "regtest"]))]
     network: String,
 
     #[rustfmt::skip]
@@ -99,12 +100,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let timestamp = chrono::Local::now().format("%Y%m%d%H%M%S");
 
     #[rustfmt::skip]
-    let (network_magic, port, dns_seeds, filename) = match args.network.as_str() {
-        "mainnet" => (Magic::BITCOIN, PORT_MAINNET, SEEDS_MAINNET, format!("mainnet-{}.txt", timestamp)),
-        "testnet4" => (Magic::TESTNET4, PORT_TESTNET, SEEDS_TESTNET, format!("testnet4-{}.txt", timestamp)),
-        "signet" => (Magic::SIGNET, PORT_SIGNET, SEEDS_SIGNET, format!("signet-{}.txt", timestamp)),
-        "regtest" => (Magic::REGTEST, PORT_REGTEST, &["localhost"][..], format!("regtest-{}.txt", timestamp)),
-        _ => (Magic::BITCOIN, PORT_MAINNET, SEEDS_MAINNET, format!("mainnet-{}.txt", timestamp)),
+    let (network_magic, port, dns_seeds, filename) = match args.network.parse::<Network>()? {
+        Network::Bitcoin => (Magic::BITCOIN, PORT_MAINNET, SEEDS_MAINNET, format!("{}-{}.txt", Network::Bitcoin, timestamp)),
+        Network::Signet => (Magic::SIGNET, PORT_SIGNET, SEEDS_SIGNET, format!("{}-{}.txt", Network::Signet, timestamp)),
+        Network::Testnet4 => (Magic::TESTNET4, PORT_TESTNET, SEEDS_TESTNET4, format!("{}-{}.txt", Network::Testnet4, timestamp)),
+        Network::Regtest => (Magic::REGTEST, PORT_REGTEST, &["localhost"][..], format!("{}-{}.txt", Network::Regtest, timestamp)),
+        _ => (Magic::BITCOIN, PORT_MAINNET, SEEDS_MAINNET, format!("{}-{}.txt", Network::Bitcoin, timestamp)),
     };
 
     // capture current timestamp
