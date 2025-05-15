@@ -1,10 +1,10 @@
 //! Network related functions
 
-use std::error::Error;
 use std::io::{Read, Write};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, TcpStream};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use anyhow::Result;
 use bitcoin::p2p::Magic;
 use dns_lookup::lookup_host;
 use log::{debug, error, info};
@@ -24,7 +24,7 @@ pub struct Peer {
 }
 
 /// Make a DNS request to seeders to get a [`Vec<Peer>`].
-pub fn request_seeds(dns_seeds: &[&str], port: u16, network_magic: Magic) -> Result<Vec<Peer>, Box<dyn std::error::Error>> {
+pub fn request_seeds(dns_seeds: &[&str], port: u16, network_magic: Magic) -> Result<Vec<Peer>> {
     const N_PEERS: usize = 10;
     const N_SEEDERS: usize = 3;
 
@@ -50,7 +50,7 @@ pub fn request_seeds(dns_seeds: &[&str], port: u16, network_magic: Magic) -> Res
     }
 
     if seed_candidates.is_empty() {
-        return Err("failed to resolve any DNS seeds".into());
+        return Err(anyhow::anyhow!("failed to resolve any DNS seeds"));
     }
 
     info!("found {} potential seed nodes, making handshakes...", seed_candidates.len());
@@ -89,7 +89,7 @@ pub fn request_seeds(dns_seeds: &[&str], port: u16, network_magic: Magic) -> Res
     }
 
     if validated_peers.is_empty() {
-        return Err("failed to connect to any seed nodes".into());
+        return Err(anyhow::anyhow!("failed to connect to any seed nodes"));
     }
 
     info!("successful handshakes with {} seed nodes", validated_peers.len());
@@ -98,7 +98,7 @@ pub fn request_seeds(dns_seeds: &[&str], port: u16, network_magic: Magic) -> Res
 }
 
 /// Perform a handshake, return success status
-pub fn handshake(stream: &mut TcpStream, network_magic: Magic, thread_id: usize) -> Result<bool, Box<dyn Error>> {
+pub fn handshake(stream: &mut TcpStream, network_magic: Magic, thread_id: usize) -> Result<bool> {
     let addr = stream.peer_addr()?;
     let peer_ip = addr.ip();
     let peer_port = addr.port();
@@ -227,7 +227,7 @@ pub fn make_packet(command: &str, payload: Option<Vec<u8>>, network_magic: Magic
 }
 
 /// Reads a message from the stream, return the command and payload
-pub fn read_message(stream: &mut TcpStream) -> Result<(String, Vec<u8>), Box<dyn Error>> {
+pub fn read_message(stream: &mut TcpStream) -> Result<(String, Vec<u8>)> {
     let mut header = vec![0u8; 24];
     stream.read_exact(&mut header)?;
 

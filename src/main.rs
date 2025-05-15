@@ -7,7 +7,6 @@
 #![allow(clippy::redundant_field_names)]
 
 use std::collections::{HashMap, HashSet};
-use std::error::Error;
 use std::io::Write;
 use std::net::{IpAddr, SocketAddr, TcpStream};
 use std::path::Path;
@@ -16,6 +15,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use anyhow::Result;
 use bitcoin::network::Network;
 use bitcoin::p2p::Magic;
 use clap::builder::PossibleValuesParser;
@@ -78,7 +78,7 @@ struct Args {
     debug: bool,
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<()> {
     let args = Args::parse();
 
     // CTRL-C handler
@@ -118,7 +118,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // "leave some for the rest of us!"
     let n_threads = std::cmp::max(1, num_cpus::get() - 2);
 
-    let mut peers = crawl(bootstrap_peers, n_threads, network_magic, running, shutdown_tx, t_0)?;
+    let mut peers = crawl(bootstrap_peers, n_threads, network_magic, running, shutdown_tx, t_0).unwrap();
     peers.sort();
     peers.dedup();
 
@@ -170,7 +170,7 @@ fn crawl(
     running: Arc<AtomicBool>,
     shutdown_tx: broadcast::Sender<()>,
     t_0: Instant,
-) -> Result<Vec<Peer>, Box<dyn std::error::Error>> {
+) -> Result<Vec<Peer>> {
     info!("starting crawl from {} bootstrap peers", bootstrap_peers.len());
 
     // threads will pull jobs from this queue
@@ -298,7 +298,7 @@ fn crawl(
     });
 
     let peers_set = Arc::try_unwrap(discovered_peers)
-        .map_err(|_| "failed to unwrap Arc: still has references")?
+        .map_err(|_| anyhow::anyhow!("failed to unwrap Arc: still has references"))?
         .into_inner()?;
 
     // convert peer set into Vec<Peer>
@@ -315,13 +315,7 @@ fn crawl(
     Ok(peers)
 }
 
-fn get_address(
-    peer_ip: IpAddr,
-    peer_port: u16,
-    network_magic: Magic,
-    thread_id: usize,
-    running: &AtomicBool,
-) -> Result<Vec<Peer>, Box<dyn Error>> {
+fn get_address(peer_ip: IpAddr, peer_port: u16, network_magic: Magic, thread_id: usize, running: &AtomicBool) -> Result<Vec<Peer>> {
     // capture CTRL-C
     if !running.load(Ordering::SeqCst) {
         return Ok(Vec::new());

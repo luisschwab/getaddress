@@ -1,12 +1,12 @@
 //! Utility functions
 
-use std::error::Error;
 use std::fmt::Arguments;
 use std::fs;
 use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+use anyhow::Result;
 use fern::colors::{Color, ColoredLevelConfig};
 use fern::FormatCallback;
 use log::{error, info, Record};
@@ -84,7 +84,7 @@ pub fn hash256(data: Vec<u8>) -> [u8; 32] {
 }
 
 /// Dumps the Peer vector to a file
-pub fn dump_to_file(path: &PathBuf, filename: &String, peers: &Vec<Peer>) -> Result<(), Box<dyn Error>> {
+pub fn dump_to_file(path: &PathBuf, filename: &String, peers: &Vec<Peer>) -> Result<()> {
     fs::create_dir_all(path)?;
 
     let file_path = path.join(filename);
