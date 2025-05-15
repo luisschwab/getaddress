@@ -16,24 +16,20 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use bitcoin::p2p::Magic;
 use clap::builder::PossibleValuesParser;
 use clap::{command, Parser};
 use log::{debug, error, info};
 use rayon::ThreadPoolBuilder;
 use tokio::sync::broadcast;
 
-use network::{handshake, make_packet, parse_addr_response, request_seeds, read_message, Peer, REQUEST_TIMEOUT};
+use network::{handshake, make_packet, parse_addr_response, read_message, request_seeds, Peer, REQUEST_TIMEOUT};
 use util::{dump_to_file, fill_asn, setup_logger};
 
 mod network;
 mod util;
 
 const OUTPUT_DIR: &str = "output";
-
-const MAGIC_MAINNET: &[u8] = &[0xF9, 0xBE, 0xB4, 0xD9];
-const MAGIC_TESTNET: &[u8] = &[0x1C, 0x16, 0x3F, 0x28];
-const MAGIC_SIGNET: &[u8] = &[0x0A, 0x03, 0xCF, 0x40]; // This is the magic for the default signet; every custom signet will have a different magic
-const MAGIC_REGTEST: &[u8] = &[0xFA, 0xBF, 0xB5, 0xDA];
 
 const PORT_MAINNET: u16 = 8333;
 const PORT_TESTNET: u16 = 48333;
@@ -104,11 +100,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     #[rustfmt::skip]
     let (network_magic, port, dns_seeds, filename) = match args.network.as_str() {
-        "mainnet" => (MAGIC_MAINNET, PORT_MAINNET, SEEDS_MAINNET, format!("mainnet-{}.txt", timestamp)),
-        "testnet4" => (MAGIC_TESTNET, PORT_TESTNET, SEEDS_TESTNET, format!("testnet4-{}.txt", timestamp)),
-        "signet" => (MAGIC_SIGNET, PORT_SIGNET, SEEDS_SIGNET, format!("signet-{}.txt", timestamp)),
-        "regtest" => (MAGIC_REGTEST, PORT_REGTEST, &["localhost"][..], format!("regtest-{}.txt", timestamp)),
-        _ => (MAGIC_MAINNET, PORT_MAINNET, SEEDS_MAINNET, format!("mainnet-{}.txt", timestamp)),
+        "mainnet" => (Magic::BITCOIN, PORT_MAINNET, SEEDS_MAINNET, format!("mainnet-{}.txt", timestamp)),
+        "testnet4" => (Magic::TESTNET4, PORT_TESTNET, SEEDS_TESTNET, format!("testnet4-{}.txt", timestamp)),
+        "signet" => (Magic::SIGNET, PORT_SIGNET, SEEDS_SIGNET, format!("signet-{}.txt", timestamp)),
+        "regtest" => (Magic::REGTEST, PORT_REGTEST, &["localhost"][..], format!("regtest-{}.txt", timestamp)),
+        _ => (Magic::BITCOIN, PORT_MAINNET, SEEDS_MAINNET, format!("mainnet-{}.txt", timestamp)),
     };
 
     // capture current timestamp
@@ -169,7 +165,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 fn crawl(
     bootstrap_peers: Vec<Peer>,
     n_threads: usize,
-    network_magic: &[u8],
+    network_magic: Magic,
     running: Arc<AtomicBool>,
     shutdown_tx: broadcast::Sender<()>,
     t_0: Instant,
@@ -321,7 +317,7 @@ fn crawl(
 fn get_address(
     peer_ip: IpAddr,
     peer_port: u16,
-    network_magic: &[u8],
+    network_magic: Magic,
     thread_id: usize,
     running: &AtomicBool,
 ) -> Result<Vec<Peer>, Box<dyn Error>> {
