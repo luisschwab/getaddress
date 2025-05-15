@@ -5,6 +5,11 @@ use std::io::{Read, Write};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, TcpStream};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use bitcoin::p2p::{
+    Address, Magic, ServiceFlags,
+    message::{NetworkMessage, RawNetworkMessage},
+    message_network::VersionMessage,
+};
 use dns_lookup::lookup_host;
 use log::{debug, error, info};
 use rand::seq::SliceRandom;
@@ -22,8 +27,8 @@ pub struct Peer {
     pub org: Option<String>,
 }
 
-/// Query DNS seeds for potential peers
-pub fn query_dns_seeds(dns_seeds: &[&str], port: u16, network_magic: &[u8]) -> Result<Vec<Peer>, Box<dyn std::error::Error>> {
+/// Make a DNS request to seeders to get a [`Vec<Peer>`].
+pub fn request_seeds(dns_seeds: &[&str], port: u16, network_magic: &[u8]) -> Result<Vec<Peer>, Box<dyn std::error::Error>> {
     const N_PEERS: usize = 10;
     const N_SEEDERS: usize = 3;
 

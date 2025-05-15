@@ -1,4 +1,4 @@
-//! getaddress
+//! `getaddress`
 //!
 //! Builds a list of reachable Bitcoin nodes by impersonating
 //! one and recursively sending `getaddr` messages to other known nodes.
@@ -22,7 +22,7 @@ use log::{debug, error, info};
 use rayon::ThreadPoolBuilder;
 use tokio::sync::broadcast;
 
-use network::{handshake, make_packet, parse_addr_response, query_dns_seeds, read_message, Peer, REQUEST_TIMEOUT};
+use network::{handshake, make_packet, parse_addr_response, request_seeds, read_message, Peer, REQUEST_TIMEOUT};
 use util::{dump_to_file, fill_asn, setup_logger};
 
 mod network;
@@ -115,7 +115,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let t_0 = Instant::now();
 
     // populate `peers` with a few good peers from DNS seeds
-    let bootstrap_peers = query_dns_seeds(dns_seeds, port, network_magic)?;
+    let bootstrap_peers = request_seeds(dns_seeds, port, network_magic)?;
     info!("using {} peers from seed nodes as bootstrap peers", bootstrap_peers.len());
 
     // "leave some for the rest of us!"
