@@ -1,4 +1,4 @@
-//! getaddress
+//! `getaddress`
 //!
 //! Builds a list of reachable Bitcoin nodes by impersonating
 //! one and recursively sending `getaddr` messages to other known nodes.
@@ -6,23 +6,26 @@
 #![allow(unused_parens)]
 #![allow(clippy::redundant_field_names)]
 
-use std::collections::{HashMap, HashSet};
-use std::error::Error;
-use std::io::Write;
-use std::net::{IpAddr, SocketAddr, TcpStream};
-use std::path::Path;
-use std::str;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::{
+    collections::{HashMap, HashSet},
+    io::Write,
+    net::{IpAddr, SocketAddr, TcpStream},
+    path::Path,
+    str,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
+    time::{Duration, Instant},
+};
 
-use clap::builder::PossibleValuesParser;
-use clap::{command, Parser};
+use anyhow::Result;
+use bitcoin::{network::Network, p2p::Magic};
+use clap::{builder::PossibleValuesParser, command, Parser};
 use log::{debug, error, info};
+use network::{handshake, make_packet, parse_addr_response, read_message, request_seeds, Peer, REQUEST_TIMEOUT};
 use rayon::ThreadPoolBuilder;
 use tokio::sync::broadcast;
-
-use network::{handshake, make_packet, parse_addr_response, query_dns_seeds, read_message, Peer, REQUEST_TIMEOUT};
 use util::{dump_to_file, fill_asn, setup_logger};
 
 mod network;
@@ -30,17 +33,12 @@ mod util;
 
 const OUTPUT_DIR: &str = "output";
 
-const MAGIC_MAINNET: &[u8] = &[0xF9, 0xBE, 0xB4, 0xD9];
-const MAGIC_TESTNET: &[u8] = &[0x1C, 0x16, 0x3F, 0x28];
-const MAGIC_SIGNET: &[u8] = &[0x0A, 0x03, 0xCF, 0x40]; // This is the magic for the default signet; every custom signet will have a different magic
-const MAGIC_REGTEST: &[u8] = &[0xFA, 0xBF, 0xB5, 0xDA];
-
-const PORT_MAINNET: u16 = 8333;
+const PORT_BITCOIN: u16 = 8333;
 const PORT_TESTNET: u16 = 48333;
 const PORT_SIGNET: u16 = 38333;
 const PORT_REGTEST: u16 = 18444;
 
-const SEEDS_MAINNET: &[&str] = &[
+const SEEDS_BITCOIN: &[&str] = &[
     "seed.bitcoin.luisschwab.com",
     "dnsseed.bitcoin.dashjr.org",
     "dnsseed.bluematt.me",
@@ -57,20 +55,20 @@ const SEEDS_MAINNET: &[&str] = &[
     "seed.mainnet.achownodes.xyz",
 ];
 #[rustfmt::skip]
-const SEEDS_TESTNET: &[&str] = &[
-    "seed.testnet4.bitcoin.sprovoost.nl",
-    "seed.testnet4.wiz.biz"
-];
-#[rustfmt::skip]
 const SEEDS_SIGNET: &[&str] = &[
     "seed.signet.achownodes.xyz",
     "seed.signet.bitcoin.sprovoost.nl"
+];
+#[rustfmt::skip]
+const SEEDS_TESTNET4: &[&str] = &[
+    "seed.testnet4.bitcoin.sprovoost.nl",
+    "seed.testnet4.wiz.biz"
 ];
 
 #[derive(Parser, Debug)]
 #[command(version, name="getaddress", about="getaddress\nA P2P crawler for all Bitcoin networks", long_about = None)]
 struct Args {
-    #[arg(long, alias="net", default_value_t=("mainnet".to_string()), help="Network to crawl", value_parser = PossibleValuesParser::new(["mainnet", "testnet4", "signet", "regtest"]))]
+    #[arg(long, short, alias="network", default_value_t=String::from("bitcoin"), help="Network to crawl", value_parser = PossibleValuesParser::new(["bitcoin", "signet", "testnet4", "regtest"]))]
     network: String,
 
     #[rustfmt::skip]
@@ -81,7 +79,7 @@ struct Args {
     debug: bool,
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<()> {
     let args = Args::parse();
 
     // CTRL-C handler
@@ -103,25 +101,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let timestamp = chrono::Local::now().format("%Y%m%d%H%M%S");
 
     #[rustfmt::skip]
-    let (network_magic, port, dns_seeds, filename) = match args.network.as_str() {
-        "mainnet" => (MAGIC_MAINNET, PORT_MAINNET, SEEDS_MAINNET, format!("mainnet-{}.txt", timestamp)),
-        "testnet4" => (MAGIC_TESTNET, PORT_TESTNET, SEEDS_TESTNET, format!("testnet4-{}.txt", timestamp)),
-        "signet" => (MAGIC_SIGNET, PORT_SIGNET, SEEDS_SIGNET, format!("signet-{}.txt", timestamp)),
-        "regtest" => (MAGIC_REGTEST, PORT_REGTEST, &["localhost"][..], format!("regtest-{}.txt", timestamp)),
-        _ => (MAGIC_MAINNET, PORT_MAINNET, SEEDS_MAINNET, format!("mainnet-{}.txt", timestamp)),
+    let (network_magic, port, dns_seeds, filename) = match args.network.parse::<Network>()? {
+        Network::Bitcoin => (Magic::BITCOIN, PORT_BITCOIN, SEEDS_BITCOIN, format!("{}-{}.txt", Network::Bitcoin, timestamp)),
+        Network::Signet => (Magic::SIGNET, PORT_SIGNET, SEEDS_SIGNET, format!("{}-{}.txt", Network::Signet, timestamp)),
+        Network::Testnet4 => (Magic::TESTNET4, PORT_TESTNET, SEEDS_TESTNET4, format!("{}-{}.txt", Network::Testnet4, timestamp)),
+        Network::Regtest => (Magic::REGTEST, PORT_REGTEST, &["localhost"][..], format!("{}-{}.txt", Network::Regtest, timestamp)),
+        _ => (Magic::BITCOIN, PORT_BITCOIN, SEEDS_BITCOIN, format!("{}-{}.txt", Network::Bitcoin, timestamp)),
     };
 
     // capture current timestamp
     let t_0 = Instant::now();
 
     // populate `peers` with a few good peers from DNS seeds
-    let bootstrap_peers = query_dns_seeds(dns_seeds, port, network_magic)?;
+    let bootstrap_peers = request_seeds(dns_seeds, port, network_magic)?;
     info!("using {} peers from seed nodes as bootstrap peers", bootstrap_peers.len());
 
     // "leave some for the rest of us!"
     let n_threads = std::cmp::max(1, num_cpus::get() - 2);
 
-    let mut peers = crawl(bootstrap_peers, n_threads, network_magic, running, shutdown_tx, t_0)?;
+    let mut peers = crawl(bootstrap_peers, n_threads, network_magic, running, shutdown_tx, t_0).unwrap();
     peers.sort();
     peers.dedup();
 
@@ -169,11 +167,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 fn crawl(
     bootstrap_peers: Vec<Peer>,
     n_threads: usize,
-    network_magic: &[u8],
+    network_magic: Magic,
     running: Arc<AtomicBool>,
     shutdown_tx: broadcast::Sender<()>,
     t_0: Instant,
-) -> Result<Vec<Peer>, Box<dyn std::error::Error>> {
+) -> Result<Vec<Peer>> {
     info!("starting crawl from {} bootstrap peers", bootstrap_peers.len());
 
     // threads will pull jobs from this queue
@@ -301,7 +299,7 @@ fn crawl(
     });
 
     let peers_set = Arc::try_unwrap(discovered_peers)
-        .map_err(|_| "failed to unwrap Arc: still has references")?
+        .map_err(|_| anyhow::anyhow!("failed to unwrap Arc: still has references"))?
         .into_inner()?;
 
     // convert peer set into Vec<Peer>
@@ -318,13 +316,7 @@ fn crawl(
     Ok(peers)
 }
 
-fn get_address(
-    peer_ip: IpAddr,
-    peer_port: u16,
-    network_magic: &[u8],
-    thread_id: usize,
-    running: &AtomicBool,
-) -> Result<Vec<Peer>, Box<dyn Error>> {
+fn get_address(peer_ip: IpAddr, peer_port: u16, network_magic: Magic, thread_id: usize, running: &AtomicBool) -> Result<Vec<Peer>> {
     // capture CTRL-C
     if !running.load(Ordering::SeqCst) {
         return Ok(Vec::new());

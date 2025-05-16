@@ -1,10 +1,13 @@
 //! Network related functions
 
-use std::error::Error;
-use std::io::{Read, Write};
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, TcpStream};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::{
+    io::{Read, Write},
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, TcpStream},
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
+use anyhow::Result;
+use bitcoin::p2p::Magic;
 use dns_lookup::lookup_host;
 use log::{debug, error, info};
 use rand::seq::SliceRandom;
@@ -22,8 +25,8 @@ pub struct Peer {
     pub org: Option<String>,
 }
 
-/// Query DNS seeds for potential peers
-pub fn query_dns_seeds(dns_seeds: &[&str], port: u16, network_magic: &[u8]) -> Result<Vec<Peer>, Box<dyn std::error::Error>> {
+/// Make a DNS request to seeders to get a [`Vec<Peer>`].
+pub fn request_seeds(dns_seeds: &[&str], port: u16, network_magic: Magic) -> Result<Vec<Peer>> {
     const N_PEERS: usize = 10;
     const N_SEEDERS: usize = 3;
 
@@ -49,7 +52,7 @@ pub fn query_dns_seeds(dns_seeds: &[&str], port: u16, network_magic: &[u8]) -> R
     }
 
     if seed_candidates.is_empty() {
-        return Err("failed to resolve any DNS seeds".into());
+        return Err(anyhow::anyhow!("failed to resolve any DNS seeds"));
     }
 
     info!("found {} potential seed nodes, making handshakes...", seed_candidates.len());
@@ -88,7 +91,7 @@ pub fn query_dns_seeds(dns_seeds: &[&str], port: u16, network_magic: &[u8]) -> R
     }
 
     if validated_peers.is_empty() {
-        return Err("failed to connect to any seed nodes".into());
+        return Err(anyhow::anyhow!("failed to connect to any seed nodes"));
     }
 
     info!("successful handshakes with {} seed nodes", validated_peers.len());
@@ -97,7 +100,7 @@ pub fn query_dns_seeds(dns_seeds: &[&str], port: u16, network_magic: &[u8]) -> R
 }
 
 /// Perform a handshake, return success status
-pub fn handshake(stream: &mut TcpStream, network_magic: &[u8], thread_id: usize) -> Result<bool, Box<dyn Error>> {
+pub fn handshake(stream: &mut TcpStream, network_magic: Magic, thread_id: usize) -> Result<bool> {
     let addr = stream.peer_addr()?;
     let peer_ip = addr.ip();
     let peer_port = addr.port();
@@ -161,11 +164,11 @@ pub fn handshake(stream: &mut TcpStream, network_magic: &[u8], thread_id: usize)
 }
 
 /// Makes a header given a command, network magic and payload
-pub fn make_header(command: &str, network_magic: &[u8], payload: Vec<u8>) -> Vec<u8> {
+pub fn make_header(command: &str, network_magic: Magic, payload: Vec<u8>) -> Vec<u8> {
     let mut header: Vec<u8> = Vec::new();
 
     // network magic, 4 bytes
-    header.extend_from_slice(network_magic);
+    header.extend_from_slice(&network_magic.to_bytes());
     // command ascii-bytes, 12 bytes
     header.extend_from_slice(pad_vector(command.as_bytes().to_vec(), 12).as_slice());
     // payload size, 4 bytes LE
@@ -213,7 +216,7 @@ pub fn make_version_payload(peer_ip: IpAddr, peer_port: u16) -> Vec<u8> {
 }
 
 /// Make a packet (header + payload)
-pub fn make_packet(command: &str, payload: Option<Vec<u8>>, network_magic: &[u8]) -> Vec<u8> {
+pub fn make_packet(command: &str, payload: Option<Vec<u8>>, network_magic: Magic) -> Vec<u8> {
     let mut packet: Vec<u8> = Vec::new();
 
     let payload = payload.unwrap_or_default();
@@ -226,7 +229,7 @@ pub fn make_packet(command: &str, payload: Option<Vec<u8>>, network_magic: &[u8]
 }
 
 /// Reads a message from the stream, return the command and payload
-pub fn read_message(stream: &mut TcpStream) -> Result<(String, Vec<u8>), Box<dyn Error>> {
+pub fn read_message(stream: &mut TcpStream) -> Result<(String, Vec<u8>)> {
     let mut header = vec![0u8; 24];
     stream.read_exact(&mut header)?;
 

@@ -1,14 +1,18 @@
 //! Utility functions
 
-use std::error::Error;
-use std::fmt::Arguments;
-use std::fs;
-use std::fs::File;
-use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::{
+    fmt::Arguments,
+    fs,
+    fs::File,
+    io::Write,
+    path::{Path, PathBuf},
+};
 
-use fern::colors::{Color, ColoredLevelConfig};
-use fern::FormatCallback;
+use anyhow::Result;
+use fern::{
+    colors::{Color, ColoredLevelConfig},
+    FormatCallback,
+};
 use log::{error, info, Record};
 use maxminddb::Reader;
 use sha2::{Digest, Sha256};
@@ -84,7 +88,7 @@ pub fn hash256(data: Vec<u8>) -> [u8; 32] {
 }
 
 /// Dumps the Peer vector to a file
-pub fn dump_to_file(path: &PathBuf, filename: &String, peers: &Vec<Peer>) -> Result<(), Box<dyn Error>> {
+pub fn dump_to_file(path: &PathBuf, filename: &String, peers: &Vec<Peer>) -> Result<()> {
     fs::create_dir_all(path)?;
 
     let file_path = path.join(filename);
